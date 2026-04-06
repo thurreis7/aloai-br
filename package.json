@@ -1,0 +1,15 @@
+{
+  "name": "alo-ai-api",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "fastify": "^4.28.0",
+    "@fastify/cors": "^9.0.1",
+    "@supabase/supabase-js": "^2.43.0",
+    "dotenv": "^16.4.5"
+  }
+}
