@@ -1,0 +1,40 @@
+# Environment variables
+.env
+
+# Node modules
+node_modules/
+
+# Dist/build directories
+dist/
+build/
+
+# Logs
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+
+# Database files
+*.sqlite
+*.sqlite3
+
+# Coverage reports
+coverage/
+nyc-output/
+
+# Env specific
+.env.local
+.env.development
+.env.production
+.env.test

@@ -1,0 +1,984 @@
+
+/* ── RESET + TOKENS ── */
+.alo-landing *, .alo-landing *::before, .alo-landing *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.alo-landing {
+  --bg:        #050508;
+  --bg1:       #0c0b14;
+  --bg2:       #12101e;
+  --bg3:       #1a172e;
+  --pri:       #7c3aed;
+  --pri-glow:  rgba(124,58,237,.38);
+  --pri-dim:   rgba(124,58,237,.14);
+  --cyan:      #22d3ee;
+  --cyan-glow: rgba(34,211,238,.28);
+  --green:     #10b981;
+  --green-glow:rgba(16,185,129,.28);
+  --amber:     #f59e0b;
+  --txt1:      #f5f3ff;
+  --txt2:      #a89fc4;
+  --txt3:      #5a5272;
+  --txt4:      #352f50;
+  --border:    rgba(124,58,237,.2);
+  --border2:   rgba(255,255,255,.06);
+  --font-h:    'Plus Jakarta Sans', system-ui, sans-serif;
+  --font:      'Plus Jakarta Sans', system-ui, sans-serif;
+
+  background:   var(--bg);
+  color:        var(--txt1);
+  font-family:  var(--font);
+  overflow-x:   hidden;
+  line-height:  1.6;
+  min-height:   100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── CANVAS BG ── */
+.alo-landing .grid-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .55;
+}
+
+/* ── NAV ── */
+.alo-landing nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 20px 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid transparent;
+  transition: all .3s;
+}
+.alo-landing nav.scrolled {
+  background: rgba(5,5,8,.88);
+  backdrop-filter: blur(16px);
+  border-color: var(--border);
+}
+.alo-landing .logo {
+  font-family: var(--font-h);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: var(--txt1);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+.alo-landing .logo-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pri);
+  box-shadow: 0 0 12px var(--pri);
+}
+.alo-landing nav ul {
+  display: flex;
+  gap: 32px;
+  list-style: none;
+}
+.alo-landing nav ul a {
+  color: var(--txt2);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: color .2s;
+}
+.alo-landing nav ul a:hover { color: var(--txt1); }
+.alo-landing .nav-cta { display: flex; gap: 10px; }
+
+/* ── BUTTONS ── */
+.alo-landing .btn {
+  padding: 9px 20px;
+  border-radius: 8px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+}
+.alo-landing .btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--txt2);
+}
+.alo-landing .btn-ghost:hover {
+  border-color: var(--pri);
+  color: var(--txt1);
+}
+.alo-landing .btn-pri {
+  background: var(--pri);
+  color: #fff;
+  box-shadow: 0 0 24px var(--pri-glow);
+}
+.alo-landing .btn-pri:hover {
+  background: #6d28d9;
+  box-shadow: 0 0 36px var(--pri-glow), 0 0 60px var(--pri-glow);
+}
+.alo-landing .btn-wa {
+  background: rgba(37,211,102,.08);
+  border: 1px solid rgba(37,211,102,.3);
+  color: #25d366;
+}
+.alo-landing .btn-wa:hover {
+  background: rgba(37,211,102,.14);
+}
+.alo-landing .btn-lg {
+  padding: 14px 32px;
+  font-size: 16px;
+  border-radius: 10px;
+}
+
+/* ── SECTIONS ── */
+.alo-landing section { position: relative; z-index: 1; }
+
+/* ── HERO ── */
+.alo-landing .hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 120px 24px 80px;
+}
+.alo-landing .hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: rgba(124,58,237,.08);
+  font-size: 12px;
+  color: var(--cyan);
+  font-weight: 500;
+  letter-spacing: .06em;
+  margin-bottom: 36px;
+  opacity: 0;
+  animation: fadeUp .8s .2s forwards;
+}
+.alo-landing .hero-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cyan);
+  animation: pulse 2s infinite;
+}
+.alo-landing h1 {
+  font-family: var(--font-h);
+  font-size: clamp(48px, 7vw, 88px);
+  font-weight: 800;
+  line-height: 1.0;
+  letter-spacing: -.04em;
+  margin-bottom: 24px;
+  opacity: 0;
+  animation: fadeUp .8s .4s forwards;
+}
+.alo-landing h1 em {
+  font-style: normal;
+  background: linear-gradient(135deg, var(--pri) 0%, var(--cyan) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.alo-landing .hero-sub {
+  font-size: 18px;
+  color: var(--txt2);
+  max-width: 520px;
+  line-height: 1.7;
+  margin-bottom: 44px;
+  opacity: 0;
+  animation: fadeUp .8s .6s forwards;
+}
+.alo-landing .hero-ctas {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+  opacity: 0;
+  animation: fadeUp .8s .8s forwards;
+}
+.alo-landing .hero-note {
+  font-size: 12px;
+  color: var(--txt3);
+  margin-top: 20px;
+  opacity: 0;
+  animation: fadeUp .8s 1s forwards;
+}
+
+/* ── PRODUCT VISUAL ── */
+.alo-landing .visual-section {
+  padding: 80px 24px 120px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+.alo-landing .visual-wrap {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+}
+.alo-landing .visual-glow {
+  position: absolute;
+  inset: -1px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(124,58,237,.2), rgba(34,211,238,.1));
+  z-index: -1;
+  filter: blur(20px);
+}
+.alo-landing .visual-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.alo-landing .dot-red    { width: 12px; height: 12px; border-radius: 50%; background: #ef4444; }
+.alo-landing .dot-yellow { width: 12px; height: 12px; border-radius: 50%; background: #eab308; }
+.alo-landing .dot-green  { width: 12px; height: 12px; border-radius: 50%; background: #22c55e; }
+.alo-landing .visual-body {
+  display: flex;
+  height: 400px;
+  overflow: hidden;
+}
+
+/* Conv list */
+.alo-landing .conv-list {
+  width: 260px;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.alo-landing .conv-item {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  transition: background .15s;
+  border-left: 2px solid transparent;
+}
+.alo-landing .conv-item.active {
+  background: rgba(124,58,237,.12);
+  border-left-color: var(--pri);
+}
+.alo-landing .conv-item:hover:not(.active) {
+  background: rgba(124,58,237,.06);
+}
+.alo-landing .conv-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+.alo-landing .conv-info { flex: 1; min-width: 0; }
+.alo-landing .conv-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--txt1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.alo-landing .conv-preview {
+  font-size: 11px;
+  color: var(--txt3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.alo-landing .conv-meta {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 4px;
+}
+.alo-landing .chan-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(34,211,238,.12);
+  color: var(--cyan);
+}
+
+/* Chat area */
+.alo-landing .chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.alo-landing .chat-msgs {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+.alo-landing .chat-msgs::-webkit-scrollbar { width: 0; }
+.alo-landing .msg {
+  max-width: 70%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.alo-landing .msg-in {
+  align-self: flex-start;
+  background: var(--bg2);
+  color: var(--txt2);
+  border-bottom-left-radius: 4px;
+  animation: msgIn .4s ease;
+}
+.alo-landing .msg-out {
+  align-self: flex-end;
+  background: var(--pri);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+  animation: msgOut .4s ease;
+}
+.alo-landing .ai-suggest {
+  margin: 0 12px 10px;
+  padding: 8px 12px;
+  background: rgba(124,58,237,.1);
+  border: 1px solid rgba(124,58,237,.25);
+  border-radius: 10px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.alo-landing .ai-suggest span {
+  color: var(--txt2);
+  flex: 1;
+}
+.alo-landing .use-btn {
+  font-size: 10px;
+  color: var(--pri);
+  background: rgba(124,58,237,.15);
+  border: none;
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-family: var(--font);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.alo-landing .chat-input {
+  margin: 8px 12px 12px;
+  padding: 10px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--txt3);
+  flex-shrink: 0;
+}
+.alo-landing .typing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  font-size: 11px;
+  color: var(--txt3);
+  flex-shrink: 0;
+}
+.alo-landing .typing-dots { display: flex; gap: 3px; }
+.alo-landing .typing-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--txt3);
+}
+.alo-landing .typing-dot:nth-child(1) { animation: typingDot 1.4s .0s infinite; }
+.alo-landing .typing-dot:nth-child(2) { animation: typingDot 1.4s .2s infinite; }
+.alo-landing .typing-dot:nth-child(3) { animation: typingDot 1.4s .4s infinite; }
+
+/* ── FLOW SECTION ── */
+.alo-landing .flow-section {
+  padding: 80px 24px 120px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.alo-landing .section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  color: var(--pri);
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+.alo-landing .section-title {
+  font-family: var(--font-h);
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 800;
+  letter-spacing: -.03em;
+  margin-bottom: 16px;
+  line-height: 1.1;
+}
+.alo-landing .section-sub {
+  font-size: 16px;
+  color: var(--txt2);
+  max-width: 480px;
+  line-height: 1.7;
+  margin-bottom: 64px;
+}
+.alo-landing .section-sub.center {
+  text-align: center;
+}
+
+.alo-landing .social-proof {
+  max-width: 720px;
+  margin: -32px auto 72px;
+  padding: 0 24px;
+  text-align: center;
+}
+.alo-landing .social-proof-text {
+  font-size: 14px;
+  color: var(--txt3);
+  line-height: 1.65;
+}
+
+.alo-landing .live-activity-section {
+  padding: 72px 24px 96px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+.alo-landing .live-activity-section h2 {
+  font-family: var(--font-h);
+  font-size: clamp(26px, 3.5vw, 40px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 12px;
+  text-align: center;
+}
+.alo-landing .live-activity-section .section-sub {
+  margin: 0 auto 40px;
+  text-align: center;
+}
+
+.alo-landing .visual-glow--subtle {
+  opacity: 0.35;
+}
+.alo-landing .flow-visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 20px 0;
+}
+.alo-landing .flow-step {
+  display: flex;
+  align-items: center;
+}
+.alo-landing .flow-icon svg {
+  color: var(--txt2);
+}
+.alo-landing .flow-icon.active svg {
+  color: var(--pri-l);
+}
+.alo-landing .flow-icon.cyan svg {
+  color: var(--cyan);
+}
+.alo-landing .flow-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-width: 120px;
+}
+.alo-landing .flow-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  position: relative;
+  transition: all .3s;
+}
+.alo-landing .flow-icon.active {
+  border-color: var(--pri);
+  background: rgba(124,58,237,.12);
+  box-shadow: 0 4px 18px rgba(124,58,237,.18);
+}
+.alo-landing .flow-icon.cyan {
+  border-color: rgba(34,211,238,.4);
+  background: rgba(34,211,238,.08);
+  box-shadow: 0 4px 18px rgba(34,211,238,.12);
+}
+.alo-landing .flow-label {
+  font-size: 12px;
+  color: var(--txt2);
+  text-align: center;
+  font-weight: 500;
+}
+.alo-landing .flow-arrow {
+  width: 60px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--pri), var(--cyan));
+  position: relative;
+  margin: 0 4px;
+  margin-bottom: 24px;
+  flex-shrink: 0;
+}
+.alo-landing .flow-arrow::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: -4px;
+  width: 10px;
+  height: 10px;
+  border-top: 2px solid var(--cyan);
+  border-right: 2px solid var(--cyan);
+  transform: rotate(45deg);
+}
+.alo-landing .flow-particle {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cyan);
+  top: -2px;
+  animation: flowParticle 2s linear infinite;
+  opacity: 0;
+}
+
+/* ── BENEFITS ── */
+.alo-landing .benefits {
+  padding: 80px 24px 120px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.alo-landing .benefits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+.alo-landing .benefit-card {
+  padding: 28px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  position: relative;
+  overflow: hidden;
+  transition: all .3s;
+  cursor: default;
+}
+.alo-landing .benefit-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(124,58,237,.1), transparent 70%);
+  transition: opacity .3s;
+}
+.alo-landing .benefit-card:hover {
+  border-color: rgba(124,58,237,.4);
+  transform: translateY(-2px);
+}
+.alo-landing .benefit-card:hover::before { opacity: 1; }
+.alo-landing .benefit-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: var(--txt1);
+}
+.alo-landing .benefit-title {
+  font-family: var(--font-h);
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.alo-landing .benefit-desc {
+  font-size: 14px;
+  color: var(--txt2);
+  line-height: 1.6;
+}
+
+/* ── WHY ── */
+.alo-landing .why-section {
+  padding: 80px 24px 120px;
+  max-width: 1100px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: center;
+}
+.alo-landing .why-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.alo-landing .why-item {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.alo-landing .why-num {
+  font-family: var(--font-h);
+  font-size: 48px;
+  font-weight: 800;
+  color: rgba(124,58,237,.2);
+  line-height: 1;
+  flex-shrink: 0;
+  width: 52px;
+}
+.alo-landing .why-content h3 {
+  font-family: var(--font-h);
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.alo-landing .why-content p {
+  font-size: 14px;
+  color: var(--txt2);
+  line-height: 1.6;
+}
+.alo-landing .why-visual {
+  position: relative;
+  height: 440px;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.alo-landing .kanban-preview {
+  display: flex;
+  gap: 10px;
+  padding: 16px;
+  overflow: hidden;
+}
+.alo-landing .kb-col { width: 130px; flex-shrink: 0; }
+.alo-landing .kb-col-head {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--txt3);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.alo-landing .kb-col-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.alo-landing .kb-card {
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--bg2);
+  border: 1px solid rgba(255,255,255,.06);
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+.alo-landing .kb-card-name {
+  font-weight: 600;
+  color: var(--txt1);
+  margin-bottom: 3px;
+}
+.alo-landing .kb-card-msg {
+  color: var(--txt3);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.alo-landing .kb-card-tag {
+  display: inline-block;
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* ── PRICING ── */
+.alo-landing .pricing-section {
+  padding: 80px 24px 120px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.alo-landing .pricing-section.pricing-section--aurora {
+  max-width: min(1200px, 100%);
+  padding-top: 48px;
+  padding-bottom: 48px;
+}
+.alo-landing .pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  position: relative;
+  z-index: 1;
+}
+.alo-landing .plan-card {
+  padding: 28px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  position: relative;
+}
+.alo-landing .plan-card.featured {
+  border: 2px solid var(--pri);
+  transform: scale(1.03);
+  box-shadow: 0 0 40px var(--pri-glow), 0 0 80px rgba(124,58,237,.08);
+}
+.alo-landing .plan-badge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 16px;
+  border-radius: 20px;
+  letter-spacing: .12em;
+  white-space: nowrap;
+}
+.alo-landing .plan-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  margin-bottom: 16px;
+}
+.alo-landing .plan-price {
+  font-family: var(--font-h);
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  margin-bottom: 4px;
+}
+.alo-landing .plan-price span {
+  font-size: 16px;
+  color: var(--txt3);
+  font-weight: 400;
+}
+.alo-landing .plan-desc {
+  font-size: 13px;
+  color: var(--txt2);
+  margin-bottom: 24px;
+}
+.alo-landing .plan-features {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-bottom: 28px;
+}
+.alo-landing .plan-feature {
+  font-size: 13px;
+  color: var(--txt2);
+  display: flex;
+  gap: 8px;
+}
+.alo-landing .plan-feature .check { color: #22c55e; }
+.alo-landing .ai-addon {
+  margin-top: 20px;
+  padding: 20px 28px;
+  border-radius: 16px;
+  border: 1px solid rgba(34,211,238,.2);
+  background: rgba(34,211,238,.04);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.alo-landing .ai-addon-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.alo-landing .ai-addon-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pri-l);
+  flex-shrink: 0;
+}
+.alo-landing .ai-addon-price {
+  font-family: var(--font-h);
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--cyan);
+}
+
+/* ── CTA FINAL ── */
+.alo-landing .cta-section {
+  padding: 100px 24px 120px;
+  text-align: center;
+  position: relative;
+}
+.alo-landing .cta-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 600px;
+  height: 300px;
+  background: radial-gradient(ellipse, rgba(124,58,237,.2) 0%, transparent 70%);
+  pointer-events: none;
+}
+.alo-landing .cta-glow--subtle {
+  opacity: 0.45;
+}
+.alo-landing .cta-box {
+  max-width: 680px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+.alo-landing .cta-box h2 {
+  font-family: var(--font-h);
+  font-size: clamp(32px, 5vw, 56px);
+  font-weight: 800;
+  letter-spacing: -.03em;
+  margin-bottom: 20px;
+  line-height: 1.1;
+}
+.alo-landing .cta-box p {
+  font-size: 17px;
+  color: var(--txt2);
+  margin-bottom: 44px;
+  line-height: 1.7;
+}
+.alo-landing .cta-btns {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.alo-landing .cta-note {
+  font-size: 12px;
+  color: var(--txt3);
+  margin-top: 20px;
+}
+
+/* ── FOOTER ── */
+.alo-landing footer {
+  border-top: 1px solid var(--border);
+  padding: 32px 48px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  position: relative;
+  z-index: 1;
+}
+.alo-landing .footer-links { display: flex; gap: 24px; }
+.alo-landing .footer-links a {
+  font-size: 12px;
+  color: var(--txt3);
+  text-decoration: none;
+  transition: color .2s;
+}
+.alo-landing .footer-links a:hover { color: var(--txt1); }
+.alo-landing .footer-copy { font-size: 12px; color: var(--txt3); }
+
+/* ── SCROLL REVEAL ── */
+.alo-landing .reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity .7s, transform .7s;
+}
+.alo-landing .reveal.visible { opacity: 1; transform: translateY(0); }
+.alo-landing .reveal-delay-1 { transition-delay: .1s; }
+.alo-landing .reveal-delay-2 { transition-delay: .2s; }
+.alo-landing .reveal-delay-3 { transition-delay: .3s; }
+.alo-landing .reveal-delay-4 { transition-delay: .4s; }
+.alo-landing .reveal-delay-5 { transition-delay: .5s; }
+
+/* ── KEYFRAMES ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0%,100% { opacity: .6; transform: scale(1); }
+  50%     { opacity: 1;  transform: scale(1.3); }
+}
+@keyframes typingDot {
+  0%,60%,100% { transform: translateY(0);  opacity: .35; }
+  30%         { transform: translateY(-5px); opacity: 1; }
+}
+@keyframes flowParticle {
+  0%   { left: -5%;  opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { left: 105%; opacity: 0; }
+}
+@keyframes msgIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes msgOut {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes cardFloat {
+  0%,100% { transform: translateY(0); }
+  50%     { transform: translateY(-6px); }
+}
+@keyframes glowPulse {
+  0%,100% { box-shadow: 0 0 20px var(--pri-glow); }
+  50%     { box-shadow: 0 0 40px var(--pri-glow), 0 0 70px var(--pri-glow); }
+}
+
+@media (max-width: 900px) {
+  .alo-landing nav ul { display: none; }
+  .alo-landing .why-section { grid-template-columns: 1fr; gap: 40px; }
+  .alo-landing .why-visual { height: 300px; }
+  .alo-landing nav { padding: 16px 20px; }
+}
+@media (max-width: 600px) {
+  .alo-landing .visual-body { flex-direction: column; height: auto; }
+  .alo-landing .conv-list { width: 100%; border-right: none; border-bottom: 1px solid var(--border); max-height: 160px; overflow-y: auto; }
+  .alo-landing footer { padding: 24px 20px; flex-direction: column; text-align: center; }
+  .alo-landing .hero-ctas { flex-direction: column; align-items: center; }
+}
