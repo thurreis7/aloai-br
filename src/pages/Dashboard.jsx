@@ -48,7 +48,7 @@ function hourLabel(value) {
 }
 
 export default function Dashboard() {
-  const { ws } = useAuth()
+  const { ws, workspaceReady, loading: authLoading } = useAuth()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [stats, setStats] = useState(null)
@@ -57,6 +57,17 @@ export default function Dashboard() {
     let ignore = false
 
     async function loadDashboard() {
+      if (authLoading || !workspaceReady) {
+        setLoading(true)
+        return
+      }
+
+      if (!ws?.id) {
+        setStats(null)
+        setLoading(false)
+        return
+      }
+
       setLoading(true)
       setError('')
       try {
@@ -64,37 +75,35 @@ export default function Dashboard() {
         since.setDate(since.getDate() - 6)
         since.setHours(0, 0, 0, 0)
 
-        const [conversationsRes, messagesRes, channelsRes, membersRes, usersRes] = await Promise.all([
+        const [conversationsRes, messagesRes, channelsRes, membersRes] = await Promise.all([
           supabase
             .from('conversations')
             .select('id, status, priority, created_at, last_message_at, channel_id, assigned_to')
+            .eq('workspace_id', ws.id)
             .gte('created_at', since.toISOString()),
           supabase
             .from('messages')
-            .select('id, sender_type, created_at, conversation_id')
+            .select('id, sender_type, created_at, conversation_id, conversations!inner(workspace_id)')
+            .eq('conversations.workspace_id', ws.id)
             .gte('created_at', since.toISOString()),
           supabase
             .from('channels')
-            .select('id, type, name, is_active'),
+            .select('id, type, name, is_active')
+            .eq('workspace_id', ws.id),
           supabase
             .from('workspace_members')
-            .select('id, user_id, display_name, role, is_online'),
-          supabase
-            .from('users')
-            .select('id, name'),
+            .select('id, user_id, display_name, role, is_online')
+            .eq('workspace_id', ws.id),
         ])
 
         if (conversationsRes.error) throw conversationsRes.error
         if (messagesRes.error) throw messagesRes.error
         if (channelsRes.error) throw channelsRes.error
         if (membersRes.error) throw membersRes.error
-        if (usersRes.error) throw usersRes.error
-
         const conversations = conversationsRes.data || []
         const messages = messagesRes.data || []
         const channels = channelsRes.data || []
         const members = membersRes.data || []
-        const users = usersRes.data || []
 
         const todayStart = startOfDay(new Date())
         const todayConversations = conversations.filter((item) => startOfDay(item.created_at) === todayStart)
@@ -134,12 +143,11 @@ export default function Dashboard() {
           }
         }).sort((a, b) => b.count - a.count)
 
-        const usersById = new Map(users.map((item) => [item.id, item]))
         const agentPerformance = members.map((member) => {
           const assigned = conversations.filter((item) => item.assigned_to === member.user_id)
           return {
             id: member.id,
-            name: member.display_name || usersById.get(member.user_id)?.name || 'Agente',
+            name: member.display_name || 'Agente',
             role: member.role,
             online: member.is_online,
             total: assigned.length,
@@ -214,7 +222,7 @@ export default function Dashboard() {
 
     loadDashboard()
     return () => { ignore = true }
-  }, [ws])
+  }, [ws, workspaceReady, authLoading])
 
   const topChannel = useMemo(() => stats?.channelVolume?.[0], [stats])
 
@@ -256,6 +264,11 @@ export default function Dashboard() {
           icon="!"
           title="Nao foi possivel montar o dashboard"
           description={error}
+        />
+      ) : !ws ? (
+        <EmptyState
+          title="Workspace nao selecionado"
+          description="Selecione um workspace para visualizar os indicadores operacionais."
         />
       ) : !stats ? (
         <EmptyState

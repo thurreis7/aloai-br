@@ -38,7 +38,7 @@ const CHAT_DATA = [
 ]
 
 const AI_SUGGESTS = [
-  'Sugestão IA: envie o link de cadastro — o trial não exige cartão.',
+  'Sugestão IA: apresente a implantação assistida e entregue os acessos já configurados.',
   'Sugestão IA: o plano Growth cobre bem esse volume e esses canais.',
   'Sugestão IA: envie o link do app e o passo a passo do trial de 14 dias.',
 ]
@@ -549,7 +549,7 @@ export default function Landing() {
           <a href="#">Privacidade</a>
           <a href="#">Termos</a>
           <a href="#">LGPD</a>
-          <a href="/formulario">Formulário de implantação</a>
+          <a href={WA_URL} target="_blank" rel="noreferrer">Falar com implantação</a>
         </div>
         <p className="footer-copy">© 2026 ALO AI · Todos os direitos reservados</p>
       </footer>

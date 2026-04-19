@@ -4,9 +4,7 @@ import { AuthProvider, useAuth } from './hooks/useAuth'
 import { PermissionsProvider, usePermissions } from './hooks/usePermissions'
 import Landing             from './pages/Landing'
 import Login               from './pages/Login'
-import OnboardingGate      from './pages/OnboardingGate'
 import Onboarding          from './pages/Onboarding'
-import ClientForm          from './pages/ClientForm'
 import EmailConfirmation   from './pages/EmailConfirmation'
 import ResetPassword       from './pages/ResetPassword'
 import AppLayout  from './components/layout/AppLayout'
@@ -91,6 +89,20 @@ function PermissionRoute({ permission, children, title, description }) {
   return children
 }
 
+function OwnerRoute({ children }) {
+  const { loading, isOwner } = useAuth()
+  if (loading) return <LoadingScreen />
+  if (!isOwner) {
+    return (
+      <ForbiddenScreen
+        title="Area exclusiva do owner"
+        description="A administracao de clientes e workspaces e reservada ao owner global."
+      />
+    )
+  }
+  return children
+}
+
 /* ── App with theme + permissions ── */
 function AppWithTheme() {
   const [theme, setTheme] = useState('dark')
@@ -106,15 +118,17 @@ function AppWithTheme() {
       {/* Rotas públicas */}
       <Route path="/"           element={<Landing />} />
       <Route path="/login"      element={<Login />} />
-      <Route path="/onboarding"          element={<OnboardingGate />} />
-      <Route path="/formulario"         element={<ClientForm />} />
+      <Route path="/onboarding"          element={<Navigate to="/login" replace />} />
+      <Route path="/formulario"         element={<Navigate to="/" replace />} />
       <Route path="/email-confirmed"    element={<EmailConfirmation />} />
       <Route path="/reset-password"     element={<ResetPassword />} />
 
       {/* Rotas protegidas — PermissionsProvider só carrega após login */}
       <Route path="/onboarding/internal" element={
         <PrivateRoute>
-          <Onboarding />
+          <OwnerRoute>
+            <Onboarding />
+          </OwnerRoute>
         </PrivateRoute>
       } />
 

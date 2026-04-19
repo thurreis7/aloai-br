@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { GlassCard, PageHeader, PageShell, StatusPill } from '../components/app/WorkspaceUI'
 
 export default function Settings() {
-  const { user, ws, wsRole } = useAuth()
+  const { user, ws, wsRole, isOwner, workspaces, switchWorkspace } = useAuth()
   const { can } = usePermissions()
   const outlet = useOutletContext() || {}
   const [colorPreset, setColorPreset] = useState(() => localStorage.getItem('alo-theme-accent') || 'padrao')
@@ -48,7 +48,16 @@ export default function Settings() {
           .update({ display_name: profileName })
           .eq('workspace_id', wsRole.workspace_id)
           .eq('user_id', user.id)
+
+        await supabase
+          .from('workspace_users')
+          .update({ full_name: profileName, display_name: profileName })
+          .eq('workspace_id', wsRole.workspace_id)
+          .eq('user_id', user.id)
       }
+
+      await supabase.from('profiles').update({ full_name: profileName }).eq('id', user.id)
+      await supabase.from('users').update({ name: profileName }).eq('id', user.id)
 
       setMessage('Perfil salvo com sucesso.')
     } catch (err) {
@@ -59,7 +68,7 @@ export default function Settings() {
   }
 
   async function saveWorkspace() {
-    if (!ws?.id || !can('perm_integrations')) return
+      if (!ws?.id || !(isOwner || can('perm_integrations'))) return
     setSavingWorkspace(true)
     setMessage('')
     try {
@@ -93,7 +102,17 @@ export default function Settings() {
             <strong>Perfil</strong>
           </div>
           <InfoRow label="Usuario" value={user?.email || 'Nao autenticado'} />
-          <InfoRow label="Workspace" value={ws?.name || 'Sem workspace'} />
+          <InfoRow label="Workspace" value={ws?.name || (isOwner ? 'Selecione um workspace' : 'Sem workspace')} />
+          {isOwner && workspaces.length ? (
+            <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+              <span style={{ color: 'var(--txt4)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em' }}>Workspace ativo</span>
+              <select className="workspace-select" value={ws?.id || ''} onChange={(event) => switchWorkspace(event.target.value)}>
+                {workspaces.map((workspace) => (
+                  <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label style={{ display: 'grid', gap: 6 }}>
             <span style={{ color: 'var(--txt4)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em' }}>Nome exibido</span>
             <input className="workspace-input" value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="Seu nome" />
@@ -133,25 +152,25 @@ export default function Settings() {
           </div>
           <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
             <span style={{ color: 'var(--txt4)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em' }}>Nome do workspace</span>
-            <input className="workspace-input" value={workspaceForm.name} onChange={(event) => setWorkspaceForm((current) => ({ ...current, name: event.target.value }))} disabled={!can('perm_integrations')} />
+            <input className="workspace-input" value={workspaceForm.name} onChange={(event) => setWorkspaceForm((current) => ({ ...current, name: event.target.value }))} disabled={!(isOwner || can('perm_integrations'))} />
           </label>
           <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
             <span style={{ color: 'var(--txt4)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em' }}>Slug</span>
-            <input className="workspace-input" value={workspaceForm.slug} onChange={(event) => setWorkspaceForm((current) => ({ ...current, slug: event.target.value }))} disabled={!can('perm_integrations')} />
+            <input className="workspace-input" value={workspaceForm.slug} onChange={(event) => setWorkspaceForm((current) => ({ ...current, slug: event.target.value }))} disabled={!(isOwner || can('perm_integrations'))} />
           </label>
           <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
             <span style={{ color: 'var(--txt4)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em' }}>Plano</span>
-            <select className="workspace-select" value={workspaceForm.plan} onChange={(event) => setWorkspaceForm((current) => ({ ...current, plan: event.target.value }))} disabled={!can('perm_integrations')}>
+            <select className="workspace-select" value={workspaceForm.plan} onChange={(event) => setWorkspaceForm((current) => ({ ...current, plan: event.target.value }))} disabled={!(isOwner || can('perm_integrations'))}>
               <option value="starter">starter</option>
               <option value="growth">growth</option>
               <option value="business">business</option>
             </select>
           </label>
           <label style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--txt2)' }}>
-            <input type="checkbox" checked={workspaceForm.ai_enabled} onChange={(event) => setWorkspaceForm((current) => ({ ...current, ai_enabled: event.target.checked }))} disabled={!can('perm_integrations')} />
+            <input type="checkbox" checked={workspaceForm.ai_enabled} onChange={(event) => setWorkspaceForm((current) => ({ ...current, ai_enabled: event.target.checked }))} disabled={!(isOwner || can('perm_integrations'))} />
             IA habilitada
           </label>
-          <button type="button" className="workspace-button workspace-button--secondary" style={{ display: 'inline-flex', marginTop: 14 }} onClick={saveWorkspace} disabled={!can('perm_integrations') || savingWorkspace}>
+          <button type="button" className="workspace-button workspace-button--secondary" style={{ display: 'inline-flex', marginTop: 14 }} onClick={saveWorkspace} disabled={(!(isOwner || can('perm_integrations'))) || savingWorkspace}>
             {savingWorkspace ? 'Salvando...' : 'Salvar workspace'}
           </button>
         </GlassCard>
@@ -163,7 +182,7 @@ export default function Settings() {
           </div>
           <InfoRow label="Sessao" value="Protegida pelo Supabase Auth" />
           <InfoRow label="Acesso" value="Bearer token para API REST" />
-          {can('perm_manage_users') ? (
+          {isOwner || can('perm_manage_users') ? (
             <Link to="/app/settings/users" className="workspace-button workspace-button--secondary" style={{ display: 'inline-flex', marginTop: 14, textDecoration: 'none' }}>
               Gerenciar usuarios
             </Link>

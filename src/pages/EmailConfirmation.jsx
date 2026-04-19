@@ -46,15 +46,6 @@ export default function EmailConfirmation() {
     })
   }, [navigate])
 
-  const handleResendEmail = async () => {
-    if (!email) return
-    const { error } = await supabase.auth.signUp({ email })
-    if (!error) {
-      // Recarrega para mostrar estado de loading novamente
-      setState('loading')
-    }
-  }
-
   return (
     <AuthPageShell>
       {state === 'loading' && (
@@ -97,7 +88,7 @@ export default function EmailConfirmation() {
                 Link inválido ou expirado
               </h2>
               <p className="text-sm text-white/60 max-w-xs">
-                O link pode ter sido usado antes, expirado ou estar com formato incorreto.
+                O link pode ter expirado ou esta conta ainda nao ter sido liberada pela administracao.
               </p>
               <button
                 onClick={() => navigate('/login')}

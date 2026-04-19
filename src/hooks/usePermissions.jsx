@@ -2,8 +2,17 @@ import { useState, useEffect, useContext, createContext } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
-/* ─── Default permissions per role ─── */
 const ROLE_DEFAULTS = {
+  owner: {
+    perm_channels_view: true, perm_channels_respond: true,
+    perm_conv_scope: 'all',
+    perm_reply: true, perm_transfer: true, perm_close: true,
+    perm_kanban_move: true, perm_tags: true, perm_history: true,
+    perm_kanban_view: true, perm_kanban_edit: true,
+    perm_reports_metrics: true, perm_reports_team: true,
+    perm_ai: true,
+    perm_manage_users: true, perm_connect_channels: true, perm_integrations: true,
+  },
   admin: {
     perm_channels_view: true, perm_channels_respond: true,
     perm_conv_scope: 'all',
@@ -39,7 +48,7 @@ const ROLE_DEFAULTS = {
 const PermissionsContext = createContext(null)
 
 export function PermissionsProvider({ children }) {
-  const { user, wsRole } = useAuth()
+  const { user, profile, wsRole, isOwner } = useAuth()
   const [permissions, setPermissions] = useState(null)
   const [role, setRole] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -55,58 +64,48 @@ export function PermissionsProvider({ children }) {
     async function load() {
       setLoading(true)
       try {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', user.id)
-          .maybeSingle()
-
-        let userRole = userData?.role || wsRole?.role
-
-        if (!userRole) {
-          const { data: memberData } = await supabase
-            .from('workspace_members')
-            .select('role')
-            .eq('user_id', user.id)
-            .maybeSingle()
-          userRole = memberData?.role || 'agent'
-        }
-
+        // Role: vem do profile (public.users) ou do wsRole como fallback
+        const userRole = isOwner ? 'owner' : (profile?.role || wsRole?.role || 'agent')
         setRole(userRole)
 
-        // Admins sempre têm acesso total — não precisa checar tabela
-        if (userRole === 'admin') {
-          setPermissions(ROLE_DEFAULTS.admin)
+        // owner e admin sempre têm acesso total — sem precisar checar tabela
+        if (userRole === 'owner' || userRole === 'admin') {
+          setPermissions(ROLE_DEFAULTS[userRole])
           setLoading(false)
           return
         }
 
-        // Busca permissões customizadas
+        // Para outros roles: busca permissões customizadas
         const { data: perms } = await supabase
           .from('user_permissions')
           .select('*')
           .eq('user_id', user.id)
+          .eq('workspace_id', wsRole?.workspace_id)
           .maybeSingle()
 
-        setPermissions(perms || ROLE_DEFAULTS[userRole])
+        setPermissions(perms || ROLE_DEFAULTS[userRole] || ROLE_DEFAULTS.agent)
       } catch {
-        setPermissions(ROLE_DEFAULTS['agent'])
-        setRole('agent')
+        const fallbackRole = isOwner ? 'owner' : (profile?.role || 'agent')
+        setPermissions(ROLE_DEFAULTS[fallbackRole] || ROLE_DEFAULTS.agent)
+        setRole(fallbackRole)
       } finally {
         setLoading(false)
       }
     }
 
     load()
-  }, [user, wsRole])
+  }, [user, profile, wsRole, isOwner])
 
   const can = (permission) => {
+    if (isOwner || role === 'owner' || role === 'admin') return true
     if (!permissions) return false
-    if (role === 'admin') return true
     return !!permissions[permission]
   }
 
-  const convScope = () => permissions?.perm_conv_scope || 'own'
+  const convScope = () => {
+    if (isOwner || role === 'owner' || role === 'admin') return 'all'
+    return permissions?.perm_conv_scope || 'own'
+  }
 
   return (
     <PermissionsContext.Provider value={{ permissions, role, loading, can, convScope }}>

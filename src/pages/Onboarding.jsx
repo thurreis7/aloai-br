@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { LogoFull } from '../components/ui/Logo'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { apiFetch } from '../lib/api'
 
 const STEPS = [
   { id:1, title:'Bem-vindo à ALO AI 👋',       sub:'Vamos configurar seu workspace em 4 passos rápidos' },
@@ -32,7 +32,7 @@ function generateCredentials(companyName, memberName) {
 export default function Onboarding() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, ws, wsRole } = useAuth()
+  const { user, ws, wsRole, isOwner } = useAuth()
   const planFromLanding = location.state?.plan || 'growth'
   const withAI          = location.state?.withAI || false
 
@@ -55,6 +55,11 @@ export default function Onboarding() {
 
   /* J tem workspace → redireciona para inbox */
   if (user && ws && wsRole) {
+    navigate('/app/inbox', { replace: true })
+    return null
+  }
+
+  if (user && !isOwner) {
     navigate('/app/inbox', { replace: true })
     return null
   }
@@ -101,9 +106,8 @@ export default function Onboarding() {
     setSetupLoading(true)
     setSetupError('')
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/workspace/setup`, {
+      const res = await apiFetch('/workspace/setup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyName: companyName.trim(),
           ownerName: ownerName.trim(),
@@ -131,7 +135,7 @@ export default function Onboarding() {
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', maxWidth:520, marginBottom:28 }}>
         <LogoFull size={32}/>
         <button
-          onClick={()=>navigate('/onboarding')}
+          onClick={()=>navigate('/')}
           style={{ background:'none', border:'1px solid var(--border)', color:'var(--txt3)', fontSize:12, cursor:'pointer', fontFamily:'var(--font)', borderRadius:'var(--r8)', padding:'6px 12px' }}>
           ← Voltar ao site
         </button>

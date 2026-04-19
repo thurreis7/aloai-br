@@ -48,7 +48,7 @@ function ChannelGlyph({ type, size = 14 }) {
 }
 
 export default function Inbox() {
-  const { user }       = useAuth()
+  const { user, ws, workspaceReady, loading: authLoading } = useAuth()
   const { can, convScope } = usePermissions()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -85,6 +85,18 @@ export default function Inbox() {
      LOAD CONVERSATIONS
      ═══════════════════════════════════════════════════ */
   const loadConvs = useCallback(async () => {
+    if (authLoading || !workspaceReady || !user) {
+      setLoading(true)
+      return
+    }
+
+    if (!ws?.id) {
+      setConvs([])
+      setActiveId(null)
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     try {
       let query = supabase
@@ -96,6 +108,7 @@ export default function Inbox() {
           contacts ( id, name, phone, company, email ),
           channels  ( id, type, name )
         `)
+        .eq('workspace_id', ws.id)
         .order('last_message_at', { ascending: false })
         .limit(60)
 
@@ -114,7 +127,7 @@ export default function Inbox() {
     } finally {
       setLoading(false)
     }
-  }, [user, convScope, activeId])
+  }, [user, ws, workspaceReady, authLoading, convScope, activeId])
 
   /* ═══════════════════════════════════════════════════
      LOAD MESSAGES
@@ -195,7 +208,7 @@ export default function Inbox() {
   /* ═══════════════════════════════════════════════════
      EFFECTS
      ═══════════════════════════════════════════════════ */
-  useEffect(() => { loadConvs() }, []) // eslint-disable-line
+  useEffect(() => { loadConvs() }, [loadConvs])
 
   useEffect(() => {
     if (loading) return
@@ -272,6 +285,7 @@ export default function Inbox() {
             phone:    activeConv.contact_phone,
             text,
             instance: `aloai-${activeConv.channel_id}`,
+            workspaceId: ws?.id,
           }),
         }).catch(console.error) // não bloqueia o fluxo
       }
@@ -479,7 +493,12 @@ export default function Inbox() {
       </div>
 
       {/* ── ÁREA DO CHAT ── */}
-      {!activeConv ? (
+      {!ws ? (
+        <div style={{...s.chatArea, ...s.emptyState}}>
+          <InboxIconLucide size={40} strokeWidth={1.25} color="var(--txt4)" aria-hidden />
+          <span style={{color:'var(--txt3)',fontSize:14}}>Selecione um workspace para visualizar as conversas</span>
+        </div>
+      ) : !activeConv ? (
         <div style={{...s.chatArea, ...s.emptyState}}>
           <InboxIconLucide size={40} strokeWidth={1.25} color="var(--txt4)" aria-hidden />
           <span style={{color:'var(--txt3)',fontSize:14}}>Selecione uma conversa</span>

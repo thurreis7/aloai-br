@@ -1,48 +1,59 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import { supabase } from '../lib/supabase'
+import { persistActiveWorkspace, resolveAuthAccess } from '../lib/access'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user,     setUser]     = useState(null)
-  const [loading,  setLoading]  = useState(true)
-  const [ws,       setWs]       = useState(null)  // workspace info
-  const [wsRole,   setWsRole]   = useState(null)  // role no workspace
+  const [user,           setUser]           = useState(null)   // auth.users
+  const [profile,        setProfile]        = useState(null)
+  const [company,        setCompany]        = useState(null)
+  const [workspaces,     setWorkspaces]     = useState([])
+  const [memberships,    setMemberships]    = useState([])
+  const [isOwner,        setIsOwner]        = useState(false)
+  const [role,           setRole]           = useState(null)
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(null)
+  const [loading,        setLoading]        = useState(true)
   const [workspaceReady, setWorkspaceReady] = useState(false)
 
-  /** Busca workspace e role do usuário logado */
-  async function loadWorkspace(userId) {
+  async function loadProfile(userId) {
     setWorkspaceReady(false)
     try {
-      const { data: members } = await supabase
-        .from('workspace_members')
-        .select('*, workspaces(*)')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: true })
+      const access = await resolveAuthAccess(userId)
 
-      const member = Array.isArray(members) ? members[0] : null
-
-      if (member) {
-        setWs(member.workspaces)
-        setWsRole({ role: member.role, workspace_id: member.workspace_id })
-      } else {
-        setWs(null)
-        setWsRole(null)
-      }
-    } catch {
-      // Tabela pode não existir ainda — ignora
-      setWs(null)
-      setWsRole(null)
+      setProfile(access.profile)
+      setCompany(access.activeWorkspace)
+      setWorkspaces(access.workspaces)
+      setMemberships(access.memberships)
+      setIsOwner(access.isOwner)
+      setRole(access.role)
+      setActiveWorkspaceId(access.activeWorkspaceId)
+    } catch (e) {
+      console.error('[Auth] Erro inesperado:', e)
+      setProfile(null)
+      setCompany(null)
+      setWorkspaces([])
+      setMemberships([])
+      setIsOwner(false)
+      setRole(null)
+      setActiveWorkspaceId(null)
     } finally {
       setWorkspaceReady(true)
     }
   }
 
+  const switchWorkspace = (workspaceId) => {
+    persistActiveWorkspace(workspaceId)
+    setActiveWorkspaceId(workspaceId)
+    setCompany(workspaces.find((item) => item.id === workspaceId) || null)
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setUser(data?.session?.user || null)
+      const u = data?.session?.user || null
+      setUser(u)
       setLoading(false)
-      if (data?.session?.user) loadWorkspace(data.session.user.id)
+      if (u) loadProfile(u.id)
       else setWorkspaceReady(true)
     })
 
@@ -50,10 +61,15 @@ export function AuthProvider({ children }) {
       const u = session?.user || null
       setUser(u)
       setLoading(false)
-      if (u) loadWorkspace(u.id)
+      if (u) loadProfile(u.id)
       else {
-        setWs(null)
-        setWsRole(null)
+        setProfile(null)
+        setCompany(null)
+        setWorkspaces([])
+        setMemberships([])
+        setIsOwner(false)
+        setRole(null)
+        setActiveWorkspaceId(null)
         setWorkspaceReady(true)
       }
     })
@@ -68,10 +84,18 @@ export function AuthProvider({ children }) {
   }
 
   const signOut = async () => {
+    if (profile?.id) {
+      await supabase.from('users').update({ is_online: false }).eq('id', profile.id)
+    }
     await supabase.auth.signOut()
     setUser(null)
-    setWs(null)
-    setWsRole(null)
+    setProfile(null)
+    setCompany(null)
+    setWorkspaces([])
+    setMemberships([])
+    setIsOwner(false)
+    setRole(null)
+    setActiveWorkspaceId(null)
   }
 
   const resetPassword = async (email) => {
@@ -82,7 +106,25 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, ws, wsRole, workspaceReady, signIn, signOut, resetPassword }}>
+    <AuthContext.Provider value={{
+      user,
+      profile,
+      company,
+      workspaces,
+      memberships,
+      isOwner,
+      role,
+      activeWorkspaceId,
+      loading,
+      workspaceReady,
+      ws:     company,
+      wsRole: profile ? { role: isOwner ? 'owner' : role, workspace_id: activeWorkspaceId } : null,
+      signIn,
+      signOut,
+      resetPassword,
+      reloadProfile: () => user ? loadProfile(user.id) : Promise.resolve(),
+      switchWorkspace,
+    }}>
       {children}
     </AuthContext.Provider>
   )
