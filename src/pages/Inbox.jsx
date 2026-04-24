@@ -3,7 +3,13 @@ import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { usePermissions } from '../hooks/usePermissions'
-import { MessageCircle, Instagram, Facebook, Mail, Globe, Inbox as InboxIconLucide } from 'lucide-react'
+import { MessageCircle, Inbox as InboxIconLucide } from 'lucide-react'
+import {
+  getChannelColor,
+  getChannelDisplayName,
+  getChannelIcon,
+  normalizeChannelType,
+} from '../lib/channels'
 
 /* ══ HELPERS ══════════════════════════════════════════ */
 const now = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
@@ -16,14 +22,6 @@ const fmtTime = (iso) => {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 
-const CH_ICONS = {
-  whatsapp: MessageCircle,
-  instagram: Instagram,
-  facebook: Facebook,
-  email: Mail,
-  webchat: Globe,
-}
-const CH_COLORS = { whatsapp:'#25d366', instagram:'#aa5ede', facebook:'#1877f2', email:'#f59e0b', webchat:'#22d3ee' }
 const PRI_COLORS = { high:'#ef4444', medium:'#f59e0b', low:'#10b981' }
 const PRI_LABELS = { high:'Alta', medium:'Média', low:'Baixa' }
 const ST_LABELS  = { open:'Aberto', waiting:'Aguardando', resolved:'Resolvido', bot:'IA ativa' }
@@ -43,7 +41,7 @@ const VITE_API = import.meta.env.VITE_API_URL || 'http://localhost:3001'
    COMPONENTE PRINCIPAL
    ══════════════════════════════════════════════════════ */
 function ChannelGlyph({ type, size = 14 }) {
-  const Cmp = CH_ICONS[type] || InboxIconLucide
+  const Cmp = getChannelIcon(type) || InboxIconLucide
   return <Cmp size={size} strokeWidth={2} aria-hidden />
 }
 
@@ -357,7 +355,9 @@ export default function Inbox() {
   /* ═══════════════════════════════════════════════════
      MAPPERS
      ═══════════════════════════════════════════════════ */
-  const mapConv = (c) => ({
+  const mapConv = (c) => {
+    const channelType = normalizeChannelType(c.channels?.type)
+    return {
     id:              c.id,
     status:          c.status,
     priority:        c.priority || 'medium',
@@ -371,9 +371,10 @@ export default function Inbox() {
     contact_company: c.contacts?.company || '',
     contact_email:   c.contacts?.email || '',
     channel_id:      c.channels?.id,
-    channel_type:    c.channels?.type || 'whatsapp',
-    channel_name:    c.channels?.name || 'WhatsApp',
-  })
+    channel_type:    channelType,
+    channel_name:    getChannelDisplayName(channelType, c.channels?.name),
+    }
+  }
 
   const mapConvPartial = (c) => ({
     status:          c.status,
@@ -473,7 +474,7 @@ export default function Inbox() {
                 </div>
                 <div style={s.convPreview}>{c.last_message || 'Sem mensagens'}</div>
                 <div style={s.convMeta}>
-                  <span style={{...s.chanTag, color: CH_COLORS[c.channel_type] || '#22d3ee', background: `${CH_COLORS[c.channel_type] || '#22d3ee'}18`, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{...s.chanTag, color: getChannelColor(c.channel_type), background: `${getChannelColor(c.channel_type)}18`, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                     <ChannelGlyph type={c.channel_type} size={12} />
                     {c.channel_name}
                   </span>
@@ -514,7 +515,7 @@ export default function Inbox() {
             <div>
               <div style={{fontWeight:700, fontSize:14}}>{activeConv.contact_name}</div>
               <div style={{fontSize:11, color:'var(--txt3)', display:'flex', alignItems:'center', gap:6}}>
-                <span style={{ color: CH_COLORS[activeConv.channel_type], display: 'inline-flex', alignItems: 'center' }}>
+                <span style={{ color: getChannelColor(activeConv.channel_type), display: 'inline-flex', alignItems: 'center' }}>
                   <ChannelGlyph type={activeConv.channel_type} size={14} />
                 </span>
                 {activeConv.channel_name}
@@ -649,7 +650,7 @@ export default function Inbox() {
               <div style={{fontSize:11, color:'var(--txt3)', textAlign:'center', marginTop:2}}>{activeConv.contact_company}</div>
             )}
             <div style={{display:'flex', gap:4, justifyContent:'center', marginTop:8, flexWrap:'wrap'}}>
-              <span style={{...s.chanTag, color: CH_COLORS[activeConv.channel_type], background:`${CH_COLORS[activeConv.channel_type]}18`, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{...s.chanTag, color: getChannelColor(activeConv.channel_type), background:`${getChannelColor(activeConv.channel_type)}18`, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <ChannelGlyph type={activeConv.channel_type} size={12} />
                 {activeConv.channel_name}
               </span>

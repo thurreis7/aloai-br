@@ -105,6 +105,8 @@ export function AuthProvider({ children }) {
     if (error) throw error
   }
 
+  const activeMembership = memberships.find((item) => item.workspace_id === activeWorkspaceId) || null
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -118,7 +120,11 @@ export function AuthProvider({ children }) {
       loading,
       workspaceReady,
       ws:     company,
-      wsRole: profile ? { role: isOwner ? 'owner' : role, workspace_id: activeWorkspaceId } : null,
+      wsRole: profile ? {
+        role: isOwner ? 'owner' : (activeMembership?.role || role),
+        workspace_id: activeMembership?.workspace_id || activeWorkspaceId,
+        company_id: activeMembership?.company_id || profile?.company_id || activeWorkspaceId || null,
+      } : null,
       signIn,
       signOut,
       resetPassword,

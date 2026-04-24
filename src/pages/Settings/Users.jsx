@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -44,59 +44,96 @@ const PERMISSION_FIELDS = [
   ['perm_close', 'Encerrar atendimento'],
   ['perm_kanban_move', 'Mover no Kanban'],
   ['perm_tags', 'Adicionar tags'],
-  ['perm_history', 'Ver histórico completo'],
+  ['perm_history', 'Ver historico completo'],
   ['perm_kanban_view', 'Visualizar board'],
   ['perm_kanban_edit', 'Editar etapas'],
-  ['perm_reports_metrics', 'Ver métricas gerais'],
+  ['perm_reports_metrics', 'Ver metricas gerais'],
   ['perm_reports_team', 'Ver desempenho da equipe'],
-  ['perm_ai', 'Usar sugestões da IA'],
-  ['perm_manage_users', 'Gerenciar usuários'],
+  ['perm_ai', 'Usar sugestoes da IA'],
+  ['perm_manage_users', 'Gerenciar usuarios'],
   ['perm_connect_channels', 'Conectar canais'],
-  ['perm_integrations', 'Alterar integrações'],
+  ['perm_integrations', 'Alterar integracoes'],
 ]
 
-async function loadWorkspaceUsers(workspaceId) {
-  const workspaceUsersRes = await supabase
-    .from('workspace_users')
-    .select('user_id, role')
-    .eq('workspace_id', workspaceId)
+async function loadCompanyUsers(companyId) {
+  if (!companyId) return []
 
-  if (!workspaceUsersRes.error && workspaceUsersRes.data?.length) {
-    return workspaceUsersRes.data
+  const extendedRes = await supabase
+    .from('users')
+    .select('id, name, email, role, company_id, created_at')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: true })
+
+  let users = extendedRes.data || []
+  if (extendedRes.error) {
+    const basicRes = await supabase
+      .from('users')
+      .select('id, name, email, role, company_id')
+      .eq('company_id', companyId)
+
+    if (basicRes.error) return []
+    users = basicRes.data || []
   }
 
-  const workspaceMembersRes = await supabase
-    .from('workspace_members')
-    .select('user_id, role')
-    .eq('workspace_id', workspaceId)
-
-  return workspaceMembersRes.data || []
+  return users.map((item) => ({
+    id: item.id,
+    name: item.name || 'Usuario',
+    email: item.email,
+    role: item.role || 'agent',
+    company_id: item.company_id,
+    created_at: item.created_at || null,
+  }))
 }
 
-async function loadProfiles(ids) {
-  const profilesRes = await supabase
-    .from('profiles')
-    .select('id, full_name, email, role, is_owner, created_at')
-    .in('id', ids)
-    .order('created_at', { ascending: true })
+async function loadScopedPermissions(userId, scopedId) {
+  if (!userId || !scopedId) return null
 
-  if (!profilesRes.error) {
-    return (profilesRes.data || []).map((item) => ({
-      id: item.id,
-      name: item.full_name || 'Usuário',
-      email: item.email,
-      role: item.is_owner ? 'owner' : (item.role || 'agent'),
-      created_at: item.created_at,
-    }))
-  }
+  const byCompany = await supabase
+    .from('user_permissions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('company_id', scopedId)
+    .maybeSingle()
 
-  const usersRes = await supabase
-    .from('users')
-    .select('id, name, email, role, created_at')
-    .in('id', ids)
-    .order('created_at', { ascending: true })
+  if (!byCompany.error) return byCompany.data
 
-  return usersRes.data || []
+  const byWorkspace = await supabase
+    .from('user_permissions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('workspace_id', scopedId)
+    .maybeSingle()
+
+  if (!byWorkspace.error) return byWorkspace.data
+
+  const generic = await supabase
+    .from('user_permissions')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  return generic.error ? null : generic.data
+}
+
+async function saveScopedPermissions(userId, scopedId, perms) {
+  const payload = { ...perms, user_id: userId, company_id: scopedId }
+  const byCompany = await supabase
+    .from('user_permissions')
+    .upsert(payload, { onConflict: 'user_id,company_id' })
+
+  if (!byCompany.error) return true
+
+  const byWorkspace = await supabase
+    .from('user_permissions')
+    .upsert({ ...perms, user_id: userId, workspace_id: scopedId }, { onConflict: 'user_id,workspace_id' })
+
+  if (!byWorkspace.error) return true
+
+  const generic = await supabase
+    .from('user_permissions')
+    .upsert({ ...perms, user_id: userId })
+
+  return !generic.error
 }
 
 export default function UsersPage() {
@@ -110,58 +147,41 @@ export default function UsersPage() {
   const [showInvite, setShowInvite] = useState(false)
   const [savedMsg, setSavedMsg] = useState(false)
 
+  const scopedCompanyId = wsRole?.company_id || wsRole?.workspace_id || null
+
   useEffect(() => {
     async function load() {
-      const workspaceId = wsRole?.workspace_id
-      if (!workspaceId) {
+      if (!scopedCompanyId) {
         setUsers([])
         setLoading(false)
         return
       }
 
       setLoading(true)
-      const members = await loadWorkspaceUsers(workspaceId)
-      const ids = members.map((item) => item.user_id)
-
-      if (!ids.length) {
-        setUsers([])
-        setLoading(false)
-        return
-      }
-
-      const profiles = await loadProfiles(ids)
-      setUsers(profiles)
+      const companyUsers = await loadCompanyUsers(scopedCompanyId)
+      setUsers(companyUsers)
       setLoading(false)
     }
 
     load()
-  }, [wsRole])
+  }, [scopedCompanyId])
 
   useEffect(() => {
-    if (!selected || !wsRole?.workspace_id) {
+    if (!selected || !scopedCompanyId) {
       setPerms(null)
       return
     }
 
     async function loadPerms() {
-      const { data } = await supabase
-        .from('user_permissions')
-        .select('*')
-        .eq('user_id', selected.id)
-        .eq('workspace_id', wsRole.workspace_id)
-        .maybeSingle()
-
+      const data = await loadScopedPermissions(selected.id, scopedCompanyId)
       setPerms(data || ROLE_DEFAULTS[selected.role] || ROLE_DEFAULTS.agent)
     }
 
     loadPerms()
-  }, [selected, wsRole])
+  }, [selected, scopedCompanyId])
 
   async function handleRoleChange(userId, newRole) {
-    await supabase.from('profiles').update({ role: newRole, is_owner: newRole === 'owner' }).eq('id', userId)
     await supabase.from('users').update({ role: newRole }).eq('id', userId)
-    await supabase.from('workspace_users').update({ role: newRole }).eq('workspace_id', wsRole?.workspace_id).eq('user_id', userId)
-    await supabase.from('workspace_members').update({ role: newRole }).eq('workspace_id', wsRole?.workspace_id).eq('user_id', userId)
 
     setUsers((prev) => prev.map((item) => item.id === userId ? { ...item, role: newRole } : item))
     setSelected((prev) => prev?.id === userId ? { ...prev, role: newRole } : prev)
@@ -169,12 +189,12 @@ export default function UsersPage() {
   }
 
   async function handleSave() {
-    if (!selected || !perms || !wsRole?.workspace_id) return
+    if (!selected || !perms || !scopedCompanyId) return
     setSaving(true)
-    await supabase
-      .from('user_permissions')
-      .upsert({ ...perms, user_id: selected.id, workspace_id: wsRole.workspace_id }, { onConflict: 'user_id,workspace_id' })
+    const ok = await saveScopedPermissions(selected.id, scopedCompanyId, perms)
     setSaving(false)
+
+    if (!ok) return
     setSavedMsg(true)
     setTimeout(() => setSavedMsg(false), 2500)
   }
@@ -184,17 +204,17 @@ export default function UsersPage() {
       <div style={styles.empty}>
         <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔒</div>
         <div style={styles.emptyTitle}>Acesso restrito</div>
-        <div style={styles.emptyDesc}>Você não tem permissão para gerenciar usuários.</div>
+        <div style={styles.emptyDesc}>Voce nao tem permissao para gerenciar usuarios.</div>
       </div>
     )
   }
 
-  if (!ws?.id) {
+  if (!scopedCompanyId) {
     return (
       <div style={styles.empty}>
         <div style={{ fontSize: '32px', marginBottom: '12px' }}>🏢</div>
-        <div style={styles.emptyTitle}>Workspace não selecionado</div>
-        <div style={styles.emptyDesc}>Selecione um workspace em Configurações para gerenciar usuários.</div>
+        <div style={styles.emptyTitle}>Cliente nao selecionado</div>
+        <div style={styles.emptyDesc}>Selecione um cliente em Configuracoes para gerenciar usuarios.</div>
       </div>
     )
   }
@@ -204,7 +224,7 @@ export default function UsersPage() {
       <div style={styles.sidebar}>
         <div style={styles.sidebarHeader}>
           <div>
-            <div style={styles.sidebarTitle}>Usuários</div>
+            <div style={styles.sidebarTitle}>Usuarios</div>
             <div style={styles.sidebarCount}>{users.length} cadastrado{users.length !== 1 ? 's' : ''}</div>
           </div>
           {isOwner ? <button style={styles.inviteBtn} onClick={() => setShowInvite(true)}>+ Convidar</button> : null}
@@ -227,7 +247,7 @@ export default function UsersPage() {
             <div style={styles.userInfo}>
               <div style={styles.userName}>
                 {item.name}
-                {item.id === currentUser?.id ? <span style={styles.youBadge}>você</span> : null}
+                {item.id === currentUser?.id ? <span style={styles.youBadge}>voce</span> : null}
               </div>
               <div style={styles.userEmail}>{item.email}</div>
             </div>
@@ -242,8 +262,8 @@ export default function UsersPage() {
         {!selected ? (
           <div style={styles.empty}>
             <div style={{ fontSize: '32px', marginBottom: '12px' }}>👈</div>
-            <div style={styles.emptyTitle}>Selecione um usuário</div>
-            <div style={styles.emptyDesc}>Clique em um usuário para editar seu papel e permissões.</div>
+            <div style={styles.emptyTitle}>Selecione um usuario</div>
+            <div style={styles.emptyDesc}>Clique em um usuario para editar seu papel e permissoes.</div>
           </div>
         ) : (
           <>
@@ -318,20 +338,20 @@ export default function UsersPage() {
                 </div>
 
                 <div style={styles.saveRow}>
-                  {savedMsg ? <span style={styles.savedMsg}>Permissões salvas</span> : null}
+                  {savedMsg ? <span style={styles.savedMsg}>Permissoes salvas</span> : null}
                   <button type="button" onClick={handleSave} disabled={saving} style={{ ...styles.saveBtn, opacity: saving ? 0.6 : 1 }}>
-                    {saving ? 'Salvando...' : 'Salvar permissões'}
+                    {saving ? 'Salvando...' : 'Salvar permissoes'}
                   </button>
                 </div>
               </>
             ) : (
-              <div style={styles.adminNote}>Este perfil já possui acesso amplo dentro do workspace selecionado.</div>
+              <div style={styles.adminNote}>Este perfil ja possui acesso amplo dentro do cliente selecionado.</div>
             )}
           </>
         )}
       </div>
 
-      {showInvite ? <InviteModal onClose={() => setShowInvite(false)} onCreated={(user) => {
+      {showInvite ? <InviteModal companyId={scopedCompanyId} onClose={() => setShowInvite(false)} onCreated={(user) => {
         setUsers((prev) => [...prev, user])
         setShowInvite(false)
       }} /> : null}
@@ -339,8 +359,7 @@ export default function UsersPage() {
   )
 }
 
-function InviteModal({ onClose, onCreated }) {
-  const { wsRole } = useAuth()
+function InviteModal({ companyId, onClose, onCreated }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('agent')
@@ -350,7 +369,7 @@ function InviteModal({ onClose, onCreated }) {
 
   async function handleCreate() {
     if (!name.trim() || !email.trim() || !pass.trim()) {
-      setErr('Preencha todos os campos obrigatórios.')
+      setErr('Preencha todos os campos obrigatorios.')
       return
     }
 
@@ -361,7 +380,8 @@ function InviteModal({ onClose, onCreated }) {
       const res = await apiFetch('/admin/users', {
         method: 'POST',
         body: JSON.stringify({
-          workspaceId: wsRole?.workspace_id,
+          companyId,
+          workspaceId: companyId,
           fullName: name,
           email,
           password: pass,
@@ -369,16 +389,17 @@ function InviteModal({ onClose, onCreated }) {
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro ao criar usuário.')
+      if (!res.ok) throw new Error(data.error || 'Erro ao criar usuario.')
 
       onCreated({
         id: data.user.id,
         name: data.user.full_name,
         email: data.user.email,
         role: data.user.role,
+        company_id: companyId,
       })
     } catch (error) {
-      setErr(error.message || 'Erro ao criar usuário.')
+      setErr(error.message || 'Erro ao criar usuario.')
       setSaving(false)
     }
   }
@@ -387,7 +408,7 @@ function InviteModal({ onClose, onCreated }) {
     <div style={styles.modalOverlay} onClick={onClose}>
       <div style={styles.modal} onClick={(event) => event.stopPropagation()}>
         <div style={styles.modalHeader}>
-          <div style={styles.modalTitle}>Adicionar usuário</div>
+          <div style={styles.modalTitle}>Adicionar usuario</div>
           <button type="button" style={styles.modalClose} onClick={onClose}>×</button>
         </div>
 
@@ -418,7 +439,7 @@ function InviteModal({ onClose, onCreated }) {
         <div style={styles.modalFooter}>
           <button type="button" style={styles.cancelBtn} onClick={onClose}>Cancelar</button>
           <button type="button" style={{ ...styles.saveBtn, opacity: saving ? 0.6 : 1 }} onClick={handleCreate} disabled={saving}>
-            {saving ? 'Criando...' : 'Criar usuário'}
+            {saving ? 'Criando...' : 'Criar usuario'}
           </button>
         </div>
       </div>

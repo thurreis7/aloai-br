@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, createContext } from 'react'
+﻿import { useState, useEffect, useContext, createContext } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
@@ -47,6 +47,36 @@ const ROLE_DEFAULTS = {
 
 const PermissionsContext = createContext(null)
 
+async function loadScopedPermissions(userId, scopedId) {
+  if (!scopedId) {
+    const genericRes = await supabase
+      .from('user_permissions')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    return genericRes.error ? null : genericRes.data
+  }
+
+  const companyRes = await supabase
+    .from('user_permissions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('company_id', scopedId)
+    .maybeSingle()
+
+  if (!companyRes.error) return companyRes.data
+
+  const workspaceRes = await supabase
+    .from('user_permissions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('workspace_id', scopedId)
+    .maybeSingle()
+
+  return workspaceRes.error ? null : workspaceRes.data
+}
+
 export function PermissionsProvider({ children }) {
   const { user, profile, wsRole, isOwner } = useAuth()
   const [permissions, setPermissions] = useState(null)
@@ -64,25 +94,17 @@ export function PermissionsProvider({ children }) {
     async function load() {
       setLoading(true)
       try {
-        // Role: vem do profile (public.users) ou do wsRole como fallback
         const userRole = isOwner ? 'owner' : (profile?.role || wsRole?.role || 'agent')
+        const scopedId = profile?.company_id || wsRole?.workspace_id || null
         setRole(userRole)
 
-        // owner e admin sempre têm acesso total — sem precisar checar tabela
         if (userRole === 'owner' || userRole === 'admin') {
           setPermissions(ROLE_DEFAULTS[userRole])
           setLoading(false)
           return
         }
 
-        // Para outros roles: busca permissões customizadas
-        const { data: perms } = await supabase
-          .from('user_permissions')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('workspace_id', wsRole?.workspace_id)
-          .maybeSingle()
-
+        const perms = await loadScopedPermissions(user.id, scopedId)
         setPermissions(perms || ROLE_DEFAULTS[userRole] || ROLE_DEFAULTS.agent)
       } catch {
         const fallbackRole = isOwner ? 'owner' : (profile?.role || 'agent')

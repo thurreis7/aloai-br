@@ -14,6 +14,7 @@ import {
 import { Activity, Bot, MessageSquare, RadioTower, Users2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { getChannelColor, getChannelLabel, normalizeChannelType } from '../lib/channels'
 import {
   CardHeader,
   EmptyState,
@@ -24,14 +25,6 @@ import {
   SkeletonBlock,
   StatusPill,
 } from '../components/app/WorkspaceUI'
-
-const CHANNEL_COLORS = {
-  whatsapp: '#25D366',
-  instagram: '#C13584',
-  facebook: '#1877F2',
-  email: '#F59E0B',
-  webchat: '#38BDF8',
-}
 
 function startOfDay(value) {
   const date = new Date(value)
@@ -99,11 +92,64 @@ export default function Dashboard() {
         if (conversationsRes.error) throw conversationsRes.error
         if (messagesRes.error) throw messagesRes.error
         if (channelsRes.error) throw channelsRes.error
-        if (membersRes.error) throw membersRes.error
+        let members = []
+        if (!membersRes.error && (membersRes.data || []).length) {
+          members = membersRes.data || []
+        } else {
+          try {
+            const workspaceUsersRes = await supabase
+              .from('workspace_users')
+              .select('id, user_id, role, created_at')
+              .eq('workspace_id', ws.id)
+
+            if (!workspaceUsersRes.error && (workspaceUsersRes.data || []).length) {
+              const usersMembersExtendedRes = await supabase
+                .from('users')
+                .select('id, name, role, is_online')
+                .eq('company_id', ws.id)
+
+              const usersById = new Map((usersMembersExtendedRes.data || []).map((user) => [user.id, user]))
+              members = (workspaceUsersRes.data || []).map((member) => ({
+                id: member.id,
+                user_id: member.user_id,
+                display_name: usersById.get(member.user_id)?.name || 'Membro',
+                role: member.role,
+                is_online: Boolean(usersById.get(member.user_id)?.is_online),
+              }))
+            }
+          } catch {
+            members = []
+          }
+
+          if (!members.length) {
+            const usersMembersExtendedRes = await supabase
+              .from('users')
+              .select('id, name, role, is_online')
+              .eq('company_id', ws.id)
+
+            let users = usersMembersExtendedRes.data || []
+            if (usersMembersExtendedRes.error) {
+              const usersMembersBasicRes = await supabase
+                .from('users')
+                .select('id, name, role, company_id')
+                .eq('company_id', ws.id)
+
+              if (usersMembersBasicRes.error) throw usersMembersBasicRes.error
+              users = usersMembersBasicRes.data || []
+            }
+
+            members = users.map((user) => ({
+              id: user.id,
+              user_id: user.id,
+              display_name: user.name,
+              role: user.role,
+              is_online: Boolean(user.is_online),
+            }))
+          }
+        }
         const conversations = conversationsRes.data || []
         const messages = messagesRes.data || []
         const channels = channelsRes.data || []
-        const members = membersRes.data || []
 
         const todayStart = startOfDay(new Date())
         const todayConversations = conversations.filter((item) => startOfDay(item.created_at) === todayStart)
@@ -133,13 +179,14 @@ export default function Dashboard() {
         })
 
         const channelVolume = channels.map((channel) => {
+          const channelType = normalizeChannelType(channel.type)
           const count = conversations.filter((item) => item.channel_id === channel.id).length
           return {
             id: channel.id,
-            name: channel.name,
-            type: channel.type,
+            name: channel.name || getChannelLabel(channelType),
+            type: channelType,
             count,
-            color: CHANNEL_COLORS[channel.type] || 'var(--pri)',
+            color: getChannelColor(channelType),
           }
         }).sort((a, b) => b.count - a.count)
 

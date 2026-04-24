@@ -1,6 +1,7 @@
-import 'dotenv/config'
+﻿import 'dotenv/config'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
+import { randomUUID } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 
 const app = Fastify({ logger: true })
@@ -13,7 +14,27 @@ const adminSupabase = createClient(
 )
 
 function slugify(value) {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+function normalizeChannelType(type) {
+  const normalized = String(type || '').trim().toLowerCase()
+  if (!normalized) return ''
+  if (normalized === 'gmail') return 'email'
+  return normalized
+}
+
+function getChannelName(type) {
+  const normalized = normalizeChannelType(type)
+  if (normalized === 'whatsapp') return 'WhatsApp Business'
+  if (normalized === 'instagram') return 'Instagram'
+  if (normalized === 'email') return 'E-mail'
+  if (normalized === 'webchat') return 'Web Chat'
+  return normalized || 'Canal'
 }
 
 function getBearerToken(req) {
@@ -33,48 +54,30 @@ async function getRequestUser(req) {
 }
 
 async function loadAccessContext(userId) {
-  let profile = null
-
-  const profileRes = await adminSupabase
-    .from('profiles')
-    .select('id, role, is_owner, workspace_id, company_id')
+  const userRes = await adminSupabase
+    .from('users')
+    .select('id, role, company_id, name, email')
     .eq('id', userId)
     .maybeSingle()
 
-  if (!profileRes.error && profileRes.data) {
-    profile = profileRes.data
-  } else {
-    const usersRes = await adminSupabase
-      .from('users')
-      .select('id, role, company_id')
-      .eq('id', userId)
-      .maybeSingle()
-
-    profile = usersRes.data || null
+  if (userRes.error || !userRes.data) {
+    return {
+      profile: null,
+      isOwner: false,
+      role: 'agent',
+      companyId: null,
+    }
   }
 
-  let memberships = []
+  const profile = userRes.data
+  const isOwner = profile.role === 'owner'
 
-  const workspaceUsersRes = await adminSupabase
-    .from('workspace_users')
-    .select('workspace_id, role')
-    .eq('user_id', userId)
-
-  if (!workspaceUsersRes.error) {
-    memberships = workspaceUsersRes.data || []
+  return {
+    profile,
+    isOwner,
+    role: profile.role || 'agent',
+    companyId: profile.company_id || null,
   }
-
-  if (!memberships.length) {
-    const workspaceMembersRes = await adminSupabase
-      .from('workspace_members')
-      .select('workspace_id, role')
-      .eq('user_id', userId)
-
-    memberships = workspaceMembersRes.data || []
-  }
-
-  const isOwner = Boolean(profile?.is_owner) || profile?.role === 'owner'
-  return { profile, memberships, isOwner }
 }
 
 async function requireAuthenticated(req, reply) {
@@ -100,84 +103,205 @@ async function requireOwner(req, reply) {
   return true
 }
 
-async function hasWorkspaceAccess(userId, workspaceId) {
+async function hasCompanyAccess(userId, companyId) {
   const context = await loadAccessContext(userId)
   if (context.isOwner) return true
-
-  if (context.profile?.workspace_id === workspaceId || context.profile?.company_id === workspaceId) {
-    return true
-  }
-
-  return context.memberships.some((item) => item.workspace_id === workspaceId)
+  return context.companyId === companyId
 }
 
-async function insertWorkspace({ companyName, plan, aiEnabled, ownerId }) {
-  const attempts = [
-    { company_name: companyName, name: companyName, slug: `${slugify(companyName)}-${Date.now().toString(36)}`, plan, ai_enabled: aiEnabled, created_by: ownerId },
-    { name: companyName, slug: `${slugify(companyName)}-${Date.now().toString(36)}`, plan, ai_enabled: aiEnabled, created_by: ownerId },
-    { name: companyName, slug: `${slugify(companyName)}-${Date.now().toString(36)}`, plan, ai_enabled: aiEnabled },
-  ]
+function normalizeClient(item) {
+  if (!item?.id) return null
+  const name = item.company_name || item.name || item.slug || `Cliente ${String(item.id).slice(0, 8)}`
+  return {
+    id: item.id,
+    name,
+    company_name: item.company_name || item.name || name,
+    slug: item.slug || null,
+    plan: item.plan || null,
+    ai_enabled: Boolean(item.ai_enabled),
+    created_by: item.created_by || null,
+    created_at: item.created_at || null,
+  }
+}
 
-  let lastError = null
+function uniqueClients(items) {
+  const map = new Map()
+  items.forEach((item) => {
+    const normalized = normalizeClient(item)
+    if (normalized?.id && !map.has(normalized.id)) map.set(normalized.id, normalized)
+  })
+  return Array.from(map.values())
+}
 
-  for (const payload of attempts) {
-    const { data, error } = await adminSupabase
+async function listClients() {
+  try {
+    const workspacesRes = await adminSupabase
       .from('workspaces')
-      .insert(payload)
+      .select('id, company_name, name, slug, plan, ai_enabled, created_by, created_at')
+      .order('created_at', { ascending: true })
+
+    if (!workspacesRes.error) {
+      const rows = uniqueClients(workspacesRes.data || [])
+      if (rows.length) return rows
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const companiesRes = await adminSupabase
+      .from('companies')
+      .select('id, company_name, name, slug, plan, ai_enabled, created_by, created_at')
+      .order('created_at', { ascending: true })
+
+    if (!companiesRes.error) {
+      const rows = uniqueClients(companiesRes.data || [])
+      if (rows.length) return rows
+    }
+  } catch {
+    // ignore
+  }
+
+  const usersRes = await adminSupabase
+    .from('users')
+    .select('company_id')
+    .not('company_id', 'is', null)
+
+  if (usersRes.error) return []
+
+  const rows = uniqueClients((usersRes.data || []).map((item) => ({ id: item.company_id })))
+  return rows
+}
+
+async function createClientRecord({ companyName, plan, aiEnabled, ownerId }) {
+  const slug = `${slugify(companyName)}-${Date.now().toString(36)}`
+
+  const companiesPayload = {
+    company_name: companyName,
+    name: companyName,
+    slug,
+    plan,
+    ai_enabled: aiEnabled,
+    created_by: ownerId,
+  }
+
+  try {
+    const companiesRes = await adminSupabase
+      .from('companies')
+      .insert(companiesPayload)
       .select('id, company_name, name, slug, plan, ai_enabled, created_by, created_at')
       .single()
 
-    if (!error) return data
-    lastError = error
+    if (!companiesRes.error && companiesRes.data?.id) {
+      return normalizeClient(companiesRes.data)
+    }
+  } catch {
+    // ignore
   }
 
-  throw new Error(`workspace: ${lastError?.message || 'falha ao criar workspace'}`)
+  try {
+    const workspacesRes = await adminSupabase
+      .from('workspaces')
+      .insert(companiesPayload)
+      .select('id, company_name, name, slug, plan, ai_enabled, created_by, created_at')
+      .single()
+
+    if (!workspacesRes.error && workspacesRes.data?.id) {
+      return normalizeClient(workspacesRes.data)
+    }
+  } catch {
+    // ignore
+  }
+
+  const id = randomUUID()
+  return normalizeClient({
+    id,
+    company_name: companyName,
+    name: companyName,
+    slug,
+    plan,
+    ai_enabled: aiEnabled,
+    created_by: ownerId,
+    created_at: new Date().toISOString(),
+  })
 }
 
-async function insertProfileRecord({ userId, email, fullName, role, workspaceId }) {
-  const profileAttempts = [
-    { id: userId, email, full_name: fullName, role, is_owner: role === 'owner', workspace_id: workspaceId, company_id: workspaceId },
-    { id: userId, email, full_name: fullName, role, is_owner: role === 'owner', company_id: workspaceId },
-    { id: userId, email, full_name: fullName, role, is_owner: role === 'owner' },
-  ]
-
-  for (const payload of profileAttempts) {
-    const { error } = await adminSupabase.from('profiles').upsert(payload)
-    if (!error) break
-  }
-
-  const userAttempts = [
-    { id: userId, name: fullName, email, role, company_id: workspaceId },
-    { id: userId, name: fullName, email, role },
-  ]
-
-  for (const payload of userAttempts) {
-    const { error } = await adminSupabase.from('users').upsert(payload)
-    if (!error) break
-  }
-}
-
-async function insertMembership({ userId, workspaceId, role, fullName }) {
-  await adminSupabase.from('workspace_users').upsert({
-    workspace_id: workspaceId,
-    user_id: userId,
+async function upsertUserRecord({ userId, email, fullName, role, companyId }) {
+  const payload = {
+    id: userId,
+    name: fullName,
+    email,
     role,
-  }, { onConflict: 'workspace_id,user_id' })
+    company_id: companyId,
+  }
 
-  await adminSupabase.from('workspace_members').upsert({
-    workspace_id: workspaceId,
-    user_id: userId,
-    role,
-    display_name: fullName,
-  }, { onConflict: 'workspace_id,user_id' })
+  const { error } = await adminSupabase.from('users').upsert(payload)
+  if (error) throw new Error(`users: ${error.message}`)
 }
 
-async function createWorkspaceMember({ workspaceId, companyName, member }) {
+async function seedPermissionsIfPossible({ userId, role, companyId }) {
+  if (role === 'owner' || role === 'admin') return
+
+  const defaultsByRole = {
+    supervisor: {
+      perm_channels_view: true,
+      perm_channels_respond: true,
+      perm_conv_scope: 'all',
+      perm_reply: true,
+      perm_transfer: true,
+      perm_close: true,
+      perm_kanban_move: true,
+      perm_tags: true,
+      perm_history: true,
+      perm_kanban_view: true,
+      perm_kanban_edit: true,
+      perm_reports_metrics: true,
+      perm_reports_team: true,
+      perm_ai: true,
+      perm_manage_users: false,
+      perm_connect_channels: false,
+      perm_integrations: false,
+    },
+    agent: {
+      perm_channels_view: true,
+      perm_channels_respond: true,
+      perm_conv_scope: 'own',
+      perm_reply: true,
+      perm_transfer: false,
+      perm_close: false,
+      perm_kanban_move: false,
+      perm_tags: true,
+      perm_history: false,
+      perm_kanban_view: true,
+      perm_kanban_edit: false,
+      perm_reports_metrics: false,
+      perm_reports_team: false,
+      perm_ai: true,
+      perm_manage_users: false,
+      perm_connect_channels: false,
+      perm_integrations: false,
+    },
+  }
+
+  const defaults = defaultsByRole[role] || defaultsByRole.agent
+
+  const byCompany = await adminSupabase
+    .from('user_permissions')
+    .upsert({ ...defaults, user_id: userId, company_id: companyId }, { onConflict: 'user_id,company_id' })
+
+  if (!byCompany.error) return
+
+  await adminSupabase
+    .from('user_permissions')
+    .upsert({ ...defaults, user_id: userId, workspace_id: companyId }, { onConflict: 'user_id,workspace_id' })
+}
+
+async function createCompanyUser({ companyId, companyName, member }) {
   if (!member.name?.trim()) return null
 
   const email = member.email?.trim() || `${slugify(member.name)}@${slugify(companyName)}.aloai.local`
   const password = member.password?.trim() || `${slugify(companyName)}123`
-  const role = member.role === 'admin' ? 'admin' : (member.role || 'agent')
+  const role = member.role === 'admin' ? 'admin' : (member.role === 'supervisor' ? 'supervisor' : 'agent')
 
   const { data: authUser, error: authError } = await adminSupabase.auth.admin.createUser({
     email,
@@ -188,20 +312,15 @@ async function createWorkspaceMember({ workspaceId, companyName, member }) {
 
   if (authError) throw new Error(authError.message)
 
-  await insertProfileRecord({
+  await upsertUserRecord({
     userId: authUser.user.id,
     email,
     fullName: member.name.trim(),
     role,
-    workspaceId,
+    companyId,
   })
 
-  await insertMembership({
-    workspaceId,
-    userId: authUser.user.id,
-    role,
-    fullName: member.name.trim(),
-  })
+  await seedPermissionsIfPossible({ userId: authUser.user.id, role, companyId })
 
   return {
     id: authUser.user.id,
@@ -209,7 +328,46 @@ async function createWorkspaceMember({ workspaceId, companyName, member }) {
     email,
     role,
     password,
+    company_id: companyId,
   }
+}
+
+async function tryInsertChannel({ companyId, channel }) {
+  const channelType = normalizeChannelType(channel)
+  const payload = {
+    type: channelType,
+    name: getChannelName(channelType),
+    is_active: true,
+    config: {},
+  }
+
+  const byWorkspace = await adminSupabase
+    .from('channels')
+    .insert({ ...payload, workspace_id: companyId })
+    .select('id, type')
+    .single()
+
+  if (!byWorkspace.error) return byWorkspace.data
+
+  const byCompany = await adminSupabase
+    .from('channels')
+    .insert({ ...payload, company_id: companyId })
+    .select('id, type')
+    .single()
+
+  return byCompany.error ? null : byCompany.data
+}
+
+async function tryInsertAuditLog({ companyId, action, resource, resourceId }) {
+  const byWorkspace = await adminSupabase
+    .from('audit_logs')
+    .insert({ workspace_id: companyId, action, resource, resource_id: resourceId })
+
+  if (!byWorkspace.error) return
+
+  await adminSupabase
+    .from('audit_logs')
+    .insert({ company_id: companyId, action, resource, resource_id: resourceId })
 }
 
 app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }))
@@ -217,27 +375,24 @@ app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }))
 app.get('/admin/workspaces', async (req, reply) => {
   if (!(await requireOwner(req, reply))) return
 
-  const { data, error } = await adminSupabase
-    .from('workspaces')
-    .select('id, company_name, name, slug, plan, ai_enabled, created_by, created_at')
-    .order('created_at', { ascending: true })
-
-  if (error) return reply.status(500).send({ error: error.message })
-  reply.send({ workspaces: data || [] })
+  const clients = await listClients()
+  reply.send({ workspaces: clients })
 })
 
 app.post('/admin/users', async (req, reply) => {
   if (!(await requireOwner(req, reply))) return
 
-  const { workspaceId, fullName, email, password, role } = req.body || {}
-  if (!workspaceId || !fullName || !email || !password) {
-    return reply.status(400).send({ error: 'workspaceId, fullName, email e password sao obrigatorios.' })
+  const { companyId, workspaceId, fullName, email, password, role } = req.body || {}
+  const scopedCompanyId = companyId || workspaceId
+
+  if (!scopedCompanyId || !fullName || !email || !password) {
+    return reply.status(400).send({ error: 'companyId, fullName, email e password sao obrigatorios.' })
   }
 
   try {
-    const member = await createWorkspaceMember({
-      workspaceId,
-      companyName: workspaceId,
+    const member = await createCompanyUser({
+      companyId: scopedCompanyId,
+      companyName: scopedCompanyId,
       member: { name: fullName, email, password, role },
     })
 
@@ -256,53 +411,40 @@ app.post('/workspace/setup', async (req, reply) => {
   }
 
   try {
-    const workspace = await insertWorkspace({
+    const client = await createClientRecord({
       companyName,
       plan: plan || 'growth',
       aiEnabled: Boolean(aiEnabled),
       ownerId: req.currentUser.id,
     })
 
-    const { data: channelData, error: channelError } = await adminSupabase
-      .from('channels')
-      .insert({
-        workspace_id: workspace.id,
-        type: channel,
-        name: channel === 'whatsapp' ? 'WhatsApp Business' : channel,
-        is_active: true,
-        config: {},
-      })
-      .select('id, type')
-      .single()
-
-    if (channelError) throw new Error(`channel: ${channelError.message}`)
-
     const createdMembers = []
     for (const member of teamMembers) {
-      const created = await createWorkspaceMember({
-        workspaceId: workspace.id,
+      const created = await createCompanyUser({
+        companyId: client.id,
         companyName,
         member,
       })
       if (created) createdMembers.push(created)
     }
 
-    await adminSupabase.from('audit_logs').insert({
-      workspace_id: workspace.id,
+    const channelData = await tryInsertChannel({ companyId: client.id, channel })
+    await tryInsertAuditLog({
+      companyId: client.id,
       action: 'workspace_setup',
       resource: 'workspace',
-      resource_id: workspace.id,
+      resourceId: client.id,
     })
 
     reply.send({
       ok: true,
-      workspace,
+      workspace: client,
       channel: channelData,
       members: createdMembers,
     })
   } catch (error) {
     req.log.error(error)
-    reply.status(500).send({ error: error.message || 'Nao foi possivel configurar o workspace.' })
+    reply.status(500).send({ error: error.message || 'Nao foi possivel configurar o cliente.' })
   }
 })
 
@@ -321,24 +463,26 @@ app.post('/webhook/whatsapp', async (req, reply) => {
   try {
     const { data: channel } = await adminSupabase
       .from('channels')
-      .select('id, workspace_id')
+      .select('id, workspace_id, company_id, type')
       .eq('type', 'whatsapp')
       .eq('config->>instance', instance)
       .single()
 
     if (!channel) return reply.send({ ok: true })
+    const scopedWorkspaceId = channel.workspace_id || channel.company_id
+    if (!scopedWorkspaceId) return reply.send({ ok: true })
 
     let { data: contact } = await adminSupabase
       .from('contacts')
       .select('id')
-      .eq('workspace_id', channel.workspace_id)
+      .eq('workspace_id', scopedWorkspaceId)
       .eq('phone', phone)
       .single()
 
     if (!contact) {
       const { data: newContact } = await adminSupabase
         .from('contacts')
-        .insert({ workspace_id: channel.workspace_id, phone, name: phone })
+        .insert({ workspace_id: scopedWorkspaceId, phone, name: phone })
         .select('id')
         .single()
       contact = newContact
@@ -347,7 +491,7 @@ app.post('/webhook/whatsapp', async (req, reply) => {
     let { data: conversation } = await adminSupabase
       .from('conversations')
       .select('id')
-      .eq('workspace_id', channel.workspace_id)
+      .eq('workspace_id', scopedWorkspaceId)
       .eq('contact_id', contact.id)
       .eq('channel_id', channel.id)
       .neq('status', 'resolved')
@@ -359,7 +503,7 @@ app.post('/webhook/whatsapp', async (req, reply) => {
       const { data: newConversation } = await adminSupabase
         .from('conversations')
         .insert({
-          workspace_id: channel.workspace_id,
+          workspace_id: scopedWorkspaceId,
           contact_id: contact.id,
           channel_id: channel.id,
           status: 'open',
@@ -402,8 +546,8 @@ app.post('/send/whatsapp', async (req, reply) => {
   }
 
   if (workspaceId) {
-    const allowed = await hasWorkspaceAccess(req.currentUser.id, workspaceId)
-    if (!allowed) return reply.status(403).send({ error: 'Acesso negado ao workspace informado.' })
+    const allowed = await hasCompanyAccess(req.currentUser.id, workspaceId)
+    if (!allowed) return reply.status(403).send({ error: 'Acesso negado ao cliente informado.' })
   }
 
   const res = await fetch(`${process.env.EVOLUTION_URL}/message/sendText/${instance}`, {

@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { GlassCard, PageHeader, PageShell, StatusPill } from '../components/app/WorkspaceUI'
 
 export default function Settings() {
-  const { user, ws, wsRole, isOwner, workspaces, switchWorkspace } = useAuth()
+  const { user, profile, ws, wsRole, isOwner, workspaces, switchWorkspace } = useAuth()
   const { can } = usePermissions()
   const outlet = useOutletContext() || {}
   const [colorPreset, setColorPreset] = useState(() => localStorage.getItem('alo-theme-accent') || 'padrao')
@@ -22,8 +22,8 @@ export default function Settings() {
   }, [colorPreset])
 
   useEffect(() => {
-    setProfileName(user?.user_metadata?.full_name || '')
-  }, [user])
+    setProfileName(user?.user_metadata?.full_name || profile?.full_name || '')
+  }, [user, profile])
 
   useEffect(() => {
     setWorkspaceForm({
@@ -42,21 +42,6 @@ export default function Settings() {
       const { error } = await supabase.auth.updateUser({ data: { full_name: profileName } })
       if (error) throw error
 
-      if (wsRole?.workspace_id) {
-        await supabase
-          .from('workspace_members')
-          .update({ display_name: profileName })
-          .eq('workspace_id', wsRole.workspace_id)
-          .eq('user_id', user.id)
-
-        await supabase
-          .from('workspace_users')
-          .update({ full_name: profileName, display_name: profileName })
-          .eq('workspace_id', wsRole.workspace_id)
-          .eq('user_id', user.id)
-      }
-
-      await supabase.from('profiles').update({ full_name: profileName }).eq('id', user.id)
       await supabase.from('users').update({ name: profileName }).eq('id', user.id)
 
       setMessage('Perfil salvo com sucesso.')
@@ -68,16 +53,28 @@ export default function Settings() {
   }
 
   async function saveWorkspace() {
-      if (!ws?.id || !(isOwner || can('perm_integrations'))) return
+    if (!ws?.id || !(isOwner || can('perm_integrations'))) return
     setSavingWorkspace(true)
     setMessage('')
     try {
-      const { error } = await supabase
+      const primaryRes = await supabase
         .from('workspaces')
         .update(workspaceForm)
         .eq('id', ws.id)
+        .select('id')
+        .maybeSingle()
 
-      if (error) throw error
+      if (primaryRes.error || !primaryRes.data?.id) {
+        const fallbackRes = await supabase
+          .from('companies')
+          .update(workspaceForm)
+          .eq('id', ws.id)
+          .select('id')
+          .maybeSingle()
+
+        if (fallbackRes.error || !fallbackRes.data?.id) throw (fallbackRes.error || new Error('Workspace nao encontrado.'))
+      }
+
       setMessage('Workspace salvo com sucesso.')
     } catch (err) {
       setMessage(err.message || 'Nao foi possivel salvar o workspace.')

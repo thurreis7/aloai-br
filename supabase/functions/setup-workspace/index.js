@@ -21,6 +21,21 @@ export default async (req) => {
       return name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
     }
 
+    function normalizeChannelType(type) {
+      const normalized = String(type || '').trim().toLowerCase()
+      if (!normalized) return ''
+      if (normalized === 'gmail') return 'email'
+      return normalized
+    }
+
+    function getChannelName(type) {
+      if (type === 'whatsapp') return 'WhatsApp Business'
+      if (type === 'instagram') return 'Instagram'
+      if (type === 'email') return 'E-mail'
+      if (type === 'webchat') return 'Web Chat'
+      return type || 'Canal'
+    }
+
     /* Step 1: Criar workspace */
     const slug = slugify(companyName) + '-' + Date.now().toString(36)
     const { data: workspace, error: wsErr } = await supabase
@@ -36,15 +51,13 @@ export default async (req) => {
     if (wsErr) throw new Error(`workspace: ${wsErr.message}`)
 
     /* Step 2: Criar channel */
+    const canonicalChannelType = normalizeChannelType(channel)
     const { data: chData, error: chErr } = await supabase
       .from('channels')
       .insert({
         workspace_id: workspace.id,
-        type: channel,
-        name: channel === 'whatsapp' ? 'WhatsApp Business'
-            : channel === 'instagram' ? 'Instagram'
-            : channel === 'email' ? 'E-mail'
-            : 'Web Chat',
+        type: canonicalChannelType,
+        name: getChannelName(canonicalChannelType),
         is_active: true,
         config: {},
       })
@@ -123,7 +136,7 @@ export default async (req) => {
       JSON.stringify({
         ok: true,
         workspace: { id: workspace.id, slug, name: companyName },
-        channel: { id: chData.id, type: channel },
+        channel: { id: chData.id, type: canonicalChannelType },
         members: createdMembers,
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }

@@ -1,45 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Instagram, Mail, MessageCircle, Radio, Send, Smartphone } from 'lucide-react'
+import { Smartphone } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { usePermissions } from '../hooks/usePermissions'
 import { useAuth } from '../hooks/useAuth'
+import {
+  CHANNEL_FIELDS,
+  CHANNEL_LIBRARY,
+  getChannelDisplayName,
+  normalizeChannelType,
+  normalizeStoredChannel,
+} from '../lib/channels'
 import { EmptyState, GlassCard, PageHeader, PageShell, SkeletonBlock, StatusPill } from '../components/app/WorkspaceUI'
-
-const CHANNEL_LIBRARY = [
-  { type: 'whatsapp', name: 'WhatsApp', icon: MessageCircle, description: 'Canal principal para atendimento e vendas com onboarding via QR Code.' },
-  { type: 'instagram', name: 'Instagram', icon: Instagram, description: 'Direct conectado para operar leads e suporte em uma mesma fila.' },
-  { type: 'telegram', name: 'Telegram', icon: Send, description: 'Bot com roteamento rapido para suporte, grupos e notificacoes.' },
-  { type: 'gmail', name: 'Gmail', icon: Mail, description: 'Caixa compartilhada com assinatura, fila e contexto de SLA.' },
-  { type: 'webchat', name: 'Webchat', icon: Radio, description: 'Widget do site com captura de contexto e automacoes.' },
-]
-
-const CHANNEL_FIELDS = {
-  whatsapp: [
-    { key: 'display_number', label: 'Numero exibido', placeholder: '+55 11 99999-9999' },
-    { key: 'business_account_id', label: 'Business Account ID', placeholder: 'Meta / BSP' },
-    { key: 'welcome_template', label: 'Template inicial', placeholder: 'boas-vindas-v1' },
-  ],
-  instagram: [
-    { key: 'handle', label: 'Perfil', placeholder: '@suaempresa' },
-    { key: 'page_id', label: 'Page ID', placeholder: 'Pagina vinculada' },
-    { key: 'sync_mode', label: 'Modo de sincronizacao', placeholder: 'DM + comentarios' },
-  ],
-  telegram: [
-    { key: 'bot_username', label: 'Bot username', placeholder: '@alo_ai_bot' },
-    { key: 'bot_token', label: 'Bot token', placeholder: '123456:ABC...' },
-    { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://...' },
-  ],
-  gmail: [
-    { key: 'inbox_email', label: 'Conta Gmail', placeholder: 'time@empresa.com' },
-    { key: 'signature_name', label: 'Assinatura', placeholder: 'Equipe ALO AI' },
-    { key: 'label_name', label: 'Label de sincronizacao', placeholder: 'ALO-AI' },
-  ],
-  webchat: [
-    { key: 'site_url', label: 'Site', placeholder: 'https://seusite.com.br' },
-    { key: 'widget_id', label: 'Widget ID', placeholder: 'widget_prod_01' },
-    { key: 'greeting', label: 'Mensagem inicial', placeholder: 'Como podemos ajudar?' },
-  ],
-}
 
 export default function Channels() {
   const { can } = usePermissions()
@@ -78,7 +49,7 @@ export default function Channels() {
           .order('created_at', { ascending: false })
 
         if (queryError) throw queryError
-        if (!ignore) setChannels(data || [])
+        if (!ignore) setChannels((data || []).map(normalizeStoredChannel))
       } catch (err) {
         if (!ignore) setError(err.message || 'Nao foi possivel carregar os canais.')
       } finally {
@@ -92,12 +63,12 @@ export default function Channels() {
 
   const mergedChannels = useMemo(() => {
     return CHANNEL_LIBRARY.map((base) => {
-      const current = channels.find((channel) => channel.type === base.type)
+      const current = channels.find((channel) => normalizeChannelType(channel.type) === base.type)
       return {
         ...base,
         id: current?.id || null,
         isActive: current?.is_active || false,
-        channelName: current?.name || base.name,
+        channelName: getChannelDisplayName(base.type, current?.name || base.defaultDisplayName),
         config: current?.config || {},
       }
     })
@@ -132,10 +103,11 @@ export default function Channels() {
     setSaving(true)
     setError('')
     try {
+      const canonicalType = normalizeChannelType(channel.type)
       const payload = {
         workspace_id: ws.id,
-        type: channel.type,
-        name: draftConfig.channel_name?.trim() || channel.channelName || channel.name,
+        type: canonicalType,
+        name: getChannelDisplayName(canonicalType, draftConfig.channel_name?.trim() || channel.channelName || channel.name),
         is_active: channel.id ? channel.isActive : true,
         config: draftConfig,
       }
@@ -143,12 +115,12 @@ export default function Channels() {
       if (channel.id) {
         const { error: updateError } = await supabase
           .from('channels')
-          .update({ name: payload.name, config: payload.config })
+          .update({ type: payload.type, name: payload.name, config: payload.config })
           .eq('id', channel.id)
           .eq('workspace_id', ws.id)
 
         if (updateError) throw updateError
-        setChannels((current) => current.map((item) => item.id === channel.id ? { ...item, name: payload.name, config: payload.config } : item))
+        setChannels((current) => current.map((item) => item.id === channel.id ? normalizeStoredChannel({ ...item, type: payload.type, name: payload.name, config: payload.config }) : item))
       } else {
         const { data, error: insertError } = await supabase
           .from('channels')
@@ -157,7 +129,7 @@ export default function Channels() {
           .single()
 
         if (insertError) throw insertError
-        setChannels((current) => [data, ...current.filter((item) => item.type !== channel.type)])
+        setChannels((current) => [normalizeStoredChannel(data), ...current.filter((item) => normalizeChannelType(item.type) !== canonicalType)])
       }
     } catch (err) {
       setError(err.message || 'Nao foi possivel salvar a configuracao do canal.')

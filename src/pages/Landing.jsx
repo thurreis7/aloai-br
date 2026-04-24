@@ -88,6 +88,7 @@ const KB_DATA = [
 
 const WA_URL = 'https://wa.me/5524974057429?text=Ol%C3%A1!%20Tenho%20interesse%20no%20ALO%20AI.'
 
+
 /* ════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ════════════════════════════════════════════ */
@@ -512,7 +513,7 @@ export default function Landing() {
         <AuroraPricing />
       </section>
 
-      {/* ── CTA FINAL ── */}
+
       <section className="cta-section">
         <div className="cta-glow cta-glow--subtle" />
         <div className="cta-box reveal">

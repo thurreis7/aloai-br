@@ -4,6 +4,54 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { EmptyState, GlassCard, PageHeader, PageShell, SkeletonBlock, StatusPill } from '../components/app/WorkspaceUI'
 
+function normalizeMember(item, source, fallbackUser = null) {
+  const userId = item?.user_id || item?.id || fallbackUser?.id || null
+  if (!userId) return null
+
+  return {
+    id: item?.id || `${source}-${userId}`,
+    user_id: userId,
+    display_name: item?.display_name || item?.name || fallbackUser?.name || null,
+    role: item?.role || fallbackUser?.role || 'agent',
+    is_online: Boolean(item?.is_online ?? fallbackUser?.is_online),
+    created_at: item?.created_at || fallbackUser?.created_at || null,
+    name: item?.display_name || item?.name || fallbackUser?.name || 'Membro',
+    email: fallbackUser?.email || item?.email || 'Sem e-mail',
+  }
+}
+
+async function loadWorkspaceUsers(workspaceId) {
+  const { data, error } = await supabase
+    .from('workspace_users')
+    .select('id, workspace_id, user_id, role, created_at')
+    .eq('workspace_id', workspaceId)
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+  return data || []
+}
+
+async function loadUsersByWorkspace(workspaceId) {
+  const usersExtendedRes = await supabase
+    .from('users')
+    .select('id, name, email, role, is_online, created_at')
+    .eq('company_id', workspaceId)
+    .order('created_at', { ascending: true })
+
+  let users = usersExtendedRes.data || []
+  if (usersExtendedRes.error) {
+    const usersBasicRes = await supabase
+      .from('users')
+      .select('id, name, email, role, company_id')
+      .eq('company_id', workspaceId)
+
+    if (usersBasicRes.error) throw usersBasicRes.error
+    users = usersBasicRes.data || []
+  }
+
+  return users
+}
+
 export default function Team() {
   const { ws, loading: authLoading, workspaceReady } = useAuth()
   const [loading, setLoading] = useState(true)
@@ -30,19 +78,36 @@ export default function Team() {
       setLoading(true)
       setError('')
       try {
-        const [membersRes, usersRes] = await Promise.all([
-          supabase.from('workspace_members').select('id, user_id, display_name, role, is_online, created_at').eq('workspace_id', ws.id).order('created_at', { ascending: true }),
-          supabase.from('users').select('id, name, email, role'),
-        ])
-        if (membersRes.error) throw membersRes.error
-        if (usersRes.error) throw usersRes.error
+        const users = await loadUsersByWorkspace(ws.id)
+        const usersById = new Map(users.map((user) => [user.id, user]))
+        const membersRes = await supabase
+          .from('workspace_members')
+          .select('id, user_id, display_name, role, is_online, created_at')
+          .eq('workspace_id', ws.id)
+          .order('created_at', { ascending: true })
 
-        const usersById = new Map((usersRes.data || []).map((user) => [user.id, user]))
-        const nextMembers = (membersRes.data || []).map((member) => ({
-          ...member,
-          name: member.display_name || usersById.get(member.user_id)?.name || 'Membro',
-          email: usersById.get(member.user_id)?.email || 'Sem e-mail',
-        }))
+        let nextMembers = []
+
+        if (!membersRes.error && (membersRes.data || []).length) {
+          nextMembers = (membersRes.data || [])
+            .map((member) => normalizeMember(member, 'workspace_members', usersById.get(member.user_id)))
+            .filter(Boolean)
+        } else {
+          try {
+            const workspaceUsers = await loadWorkspaceUsers(ws.id)
+            nextMembers = workspaceUsers
+              .map((member) => normalizeMember(member, 'workspace_users', usersById.get(member.user_id)))
+              .filter(Boolean)
+          } catch {
+            nextMembers = []
+          }
+
+          if (!nextMembers.length) {
+            nextMembers = users
+              .map((item) => normalizeMember(item, 'users_company_id', item))
+              .filter(Boolean)
+          }
+        }
 
         if (active) setMembers(nextMembers)
       } catch (err) {
@@ -57,6 +122,7 @@ export default function Team() {
     const channel = supabase
       .channel('workspace-members-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_members' }, () => loadMembers())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_users' }, () => loadMembers())
       .subscribe()
 
     return () => {
