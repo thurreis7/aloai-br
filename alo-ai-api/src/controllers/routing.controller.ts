@@ -9,12 +9,18 @@ export class RoutingController {
     private readonly routingService: RoutingService,
   ) {}
 
+  private assertWorkspaceAndConversationIds(workspaceId: string, conversationId: string) {
+    this.accessService.assertUuid(workspaceId, 'workspaceId')
+    this.accessService.assertUuid(conversationId, 'conversationId')
+  }
+
   @Post('/conversations/:conversationId/classify')
   async classifyConversation(
     @Headers('authorization') authorization: string | undefined,
     @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
   ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
 
@@ -31,6 +37,7 @@ export class RoutingController {
     @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
   ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
 
@@ -54,6 +61,7 @@ export class RoutingController {
       reason?: string
     },
   ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
 
@@ -69,4 +77,3 @@ export class RoutingController {
     })
   }
 }
-

@@ -160,6 +160,14 @@ export class ConversationService {
     assignedTo: string
     assignedBy: string
   }) {
+    const conversation = await this.loadConversation(input.workspaceId, input.conversationId)
+    if (!conversation) throw new NotFoundException('Conversa nao encontrada.')
+
+    const belongsToWorkspace = await this.isWorkspaceUser(input.workspaceId, input.assignedTo)
+    if (!belongsToWorkspace) {
+      throw new ForbiddenException('assignedTo deve pertencer ao workspace informado.')
+    }
+
     const { data, error } = await this.supabase.admin
       .from('conversations')
       .update({
@@ -449,6 +457,36 @@ export class ConversationService {
         resource: input.resource,
         resource_id: input.resourceId,
       })
+  }
+
+  private async isWorkspaceUser(workspaceId: string, userId: string) {
+    const checks = await Promise.allSettled([
+      this.supabase.admin
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', userId)
+        .maybeSingle(),
+      this.supabase.admin
+        .from('workspace_users')
+        .select('user_id')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', userId)
+        .maybeSingle(),
+      this.supabase.admin
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .or(`workspace_id.eq.${workspaceId},company_id.eq.${workspaceId}`)
+        .maybeSingle(),
+    ])
+
+    for (const check of checks) {
+      if (check.status !== 'fulfilled') continue
+      if (!check.value.error && check.value.data) return true
+    }
+
+    return false
   }
 
   private async loadConversation(workspaceId: string, conversationId: string): Promise<any> {

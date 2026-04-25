@@ -40,6 +40,10 @@ function isCopilotPaused(aiState) {
   return String(copilot.mode || '').toLowerCase() === 'paused'
 }
 
+function isOpenState(state) {
+  return normalizeConversationState(state) !== 'closed'
+}
+
 export default function Kanban() {
   const { can } = usePermissions()
   const { ws, loading: authLoading, workspaceReady } = useAuth()
@@ -73,7 +77,7 @@ export default function Kanban() {
         try {
           const { data, error: queryError } = await supabase
             .from('conversations')
-            .select('id, state, status, priority, routing_queue, routing_intent, routing_reason, ai_state, escalated_at, escalation_reason, escalation_note, last_message, last_message_at, contacts(name, company), channels(name, type), leads(status, owner_id, source_channel_id)')
+            .select('id, state, status, priority, routing_queue, routing_intent, routing_reason, assigned_to, ai_state, escalated_at, escalation_reason, escalation_note, last_message, last_message_at, contacts(name, company), channels(name, type), leads(status, owner_id, source_channel_id)')
             .eq('workspace_id', ws.id)
             .order('last_message_at', { ascending: false })
 
@@ -91,6 +95,7 @@ export default function Kanban() {
             routingQueue: item.routing_queue || 'triagem',
             routingIntent: item.routing_intent || 'duvida_geral',
             routingReason: item.routing_reason || '',
+            assignedTo: item.assigned_to || null,
             aiState: item.ai_state || {},
             escalatedAt: item.escalated_at || null,
             escalationReason: String(item.escalation_reason || 'none').toLowerCase(),
@@ -122,6 +127,21 @@ export default function Kanban() {
   }, [cards])
 
   const selected = cards.find((item) => item.id === selectedId) || null
+  const operational = useMemo(() => {
+    const activeCards = cards.filter((card) => isOpenState(card.state))
+    const queueBacklog = activeCards.reduce((acc, card) => {
+      const queue = String(card.routingQueue || 'triagem').toLowerCase()
+      acc[queue] = (acc[queue] || 0) + 1
+      return acc
+    }, {})
+
+    return {
+      unassigned: activeCards.filter((card) => !card.assignedTo).length,
+      escalated: activeCards.filter((card) => card.escalationReason !== 'none' || Boolean(card.escalatedAt)).length,
+      aiPaused: activeCards.filter((card) => isCopilotPaused(card.aiState)).length,
+      queueBacklog: Object.entries(queueBacklog).sort((a, b) => b[1] - a[1]),
+    }
+  }, [cards])
 
   if (!authLoading && workspaceReady && !ws) {
     return (
@@ -167,8 +187,26 @@ export default function Kanban() {
         eyebrow="Lifecycle sincronizado"
         title="Kanban da conversa"
         description="Seis estados canônicos, drag and drop salvo no banco e leitura instantanea de prioridade, preview e acao."
-        actions={<StatusPill tone={can('perm_kanban_move') ? 'success' : 'warning'}>{can('perm_kanban_move') ? 'Edicao liberada' : 'Somente leitura'}</StatusPill>}
+        actions={(
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>
+            <StatusPill tone={can('perm_kanban_move') ? 'success' : 'warning'}>{can('perm_kanban_move') ? 'Edicao liberada' : 'Somente leitura'}</StatusPill>
+            {can('perm_reports_metrics') ? <StatusPill tone="default">Sem dono: {operational.unassigned}</StatusPill> : null}
+            {can('perm_reports_metrics') ? <StatusPill tone="error">Escalonadas: {operational.escalated}</StatusPill> : null}
+            {can('perm_reports_metrics') ? <StatusPill tone="warning">IA pausada: {operational.aiPaused}</StatusPill> : null}
+          </div>
+        )}
       />
+
+      {can('perm_reports_metrics') ? (
+        <GlassCard style={{ margin: 0, padding: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ color: 'var(--txt3)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em' }}>Backlog por fila</span>
+            {operational.queueBacklog.length ? operational.queueBacklog.map(([queue, count]) => (
+              <StatusPill key={queue} tone="default">{queue}: {count}</StatusPill>
+            )) : <StatusPill tone="success">sem backlog</StatusPill>}
+          </div>
+        </GlassCard>
+      ) : null}
 
       {error ? (
         <EmptyState icon="!" title="Falha ao carregar o kanban" description={error} />

@@ -14,6 +14,7 @@ import {
 import { Activity, Bot, MessageSquare, RadioTower, Users2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { usePermissions } from '../hooks/usePermissions'
 import { getChannelColor, getChannelLabel, normalizeChannelType } from '../lib/channels'
 import {
   CardHeader,
@@ -40,8 +41,23 @@ function hourLabel(value) {
   return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(value)
 }
 
+function isCopilotPaused(aiState) {
+  if (!aiState || typeof aiState !== 'object' || Array.isArray(aiState)) return false
+  const copilot = aiState.copilot
+  if (!copilot || typeof copilot !== 'object' || Array.isArray(copilot)) return false
+  if (copilot.paused === true) return true
+  return String(copilot.mode || '').toLowerCase() === 'paused'
+}
+
+function isBacklogConversation(conversation) {
+  const state = String(conversation?.state || conversation?.status || '').toLowerCase()
+  return state !== 'closed' && state !== 'resolved'
+}
+
 export default function Dashboard() {
   const { ws, workspaceReady, loading: authLoading } = useAuth()
+  const { can } = usePermissions()
+  const canViewOpsMetrics = can('perm_reports_metrics')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [stats, setStats] = useState(null)
@@ -71,7 +87,7 @@ export default function Dashboard() {
         const [conversationsRes, messagesRes, channelsRes, membersRes, leadsRes] = await Promise.all([
           supabase
             .from('conversations')
-            .select('id, status, state, priority, routing_queue, routing_intent, created_at, last_message_at, channel_id, assigned_to')
+            .select('id, status, state, priority, routing_queue, routing_intent, created_at, last_message_at, channel_id, assigned_to, ai_state, escalated_at, escalation_reason')
             .eq('workspace_id', ws.id)
             .gte('created_at', since.toISOString()),
           supabase
@@ -228,36 +244,62 @@ export default function Dashboard() {
         const onlineAgents = members.filter((member) => member.is_online).length
         const qualifiedLeads = leads.filter((lead) => lead.status === 'qualified').length
         const disqualifiedLeads = leads.filter((lead) => lead.status === 'disqualified').length
-        const triageQueue = conversations.filter((conversation) => (conversation.routing_queue || 'triagem') === 'triagem').length
+        const backlogConversations = conversations.filter((conversation) => isBacklogConversation(conversation))
+        const triageQueue = backlogConversations.filter((conversation) => (conversation.routing_queue || 'triagem') === 'triagem').length
+        const queueBacklog = backlogConversations.reduce((acc, conversation) => {
+          const queue = String(conversation.routing_queue || 'triagem').toLowerCase()
+          acc[queue] = (acc[queue] || 0) + 1
+          return acc
+        }, {})
+        const queueBacklogEntries = Object.entries(queueBacklog).sort((a, b) => b[1] - a[1])
+        const unassignedConversations = backlogConversations.filter((conversation) => !conversation.assigned_to).length
+        const escalatedConversations = backlogConversations.filter((conversation) => {
+          const reason = String(conversation.escalation_reason || 'none').toLowerCase()
+          return Boolean(conversation.escalated_at) || reason !== 'none'
+        }).length
+        const aiPausedConversations = backlogConversations.filter((conversation) => isCopilotPaused(conversation.ai_state)).length
+
+        const metrics = [
+          {
+            label: 'Conversas ativas',
+            value: activeConversations,
+            hint: `${todayConversations.length} abertas hoje`,
+            accent: 'var(--pri)',
+          },
+          {
+            label: 'Resolvidas hoje',
+            value: resolvedToday,
+            hint: `${Math.round((resolvedToday / Math.max(todayConversations.length, 1)) * 100)}% de fechamento`,
+            accent: 'var(--success)',
+          },
+          {
+            label: 'Acoes por IA',
+            value: aiMessages,
+            hint: `${responseMessages} respostas humanas no periodo`,
+            accent: 'var(--info)',
+          },
+          {
+            label: 'Qualificacao',
+            value: `${qualifiedLeads}/${Math.max(leads.length, 1)}`,
+            hint: `${disqualifiedLeads} desqualificados`,
+            accent: 'var(--warn)',
+          },
+        ]
+
+        if (canViewOpsMetrics) {
+          metrics.push({
+            label: 'Backlog por fila',
+            value: backlogConversations.length,
+            hint: queueBacklogEntries.length
+              ? `${queueBacklogEntries[0][0]}: ${queueBacklogEntries[0][1]}`
+              : 'sem backlog no periodo',
+            accent: 'var(--error)',
+          })
+        }
 
         if (!ignore) {
           setStats({
-            metrics: [
-              {
-                label: 'Conversas ativas',
-                value: activeConversations,
-                hint: `${todayConversations.length} abertas hoje`,
-                accent: 'var(--pri)',
-              },
-              {
-                label: 'Resolvidas hoje',
-                value: resolvedToday,
-                hint: `${Math.round((resolvedToday / Math.max(todayConversations.length, 1)) * 100)}% de fechamento`,
-                accent: 'var(--success)',
-              },
-              {
-                label: 'Acoes por IA',
-                value: aiMessages,
-                hint: `${responseMessages} respostas humanas no periodo`,
-                accent: 'var(--info)',
-              },
-              {
-                label: 'Qualificacao',
-                value: `${qualifiedLeads}/${Math.max(leads.length, 1)}`,
-                hint: `${disqualifiedLeads} desqualificados`,
-                accent: 'var(--warn)',
-              },
-            ],
+            metrics,
             dayBuckets,
             timeline,
             channelVolume,
@@ -270,6 +312,10 @@ export default function Dashboard() {
               qualifiedLeads,
               onlineAgents,
               teamSize: Math.max(members.length, 1),
+              queueBacklog: queueBacklogEntries,
+              unassignedConversations,
+              escalatedConversations,
+              aiPausedConversations,
             },
           })
         }
@@ -282,7 +328,7 @@ export default function Dashboard() {
 
     loadDashboard()
     return () => { ignore = true }
-  }, [ws, workspaceReady, authLoading])
+  }, [ws, workspaceReady, authLoading, canViewOpsMetrics])
 
   const topChannel = useMemo(() => stats?.channelVolume?.[0], [stats])
 
@@ -551,6 +597,41 @@ export default function Dashboard() {
                   </div>
                   <strong>{stats.totals.triageQueue}</strong>
                 </div>
+                {canViewOpsMetrics ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: 14, borderRadius: 18, background: 'rgba(255,255,255,.03)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <MessageSquare size={16} color="var(--warn)" />
+                        <span style={{ color: 'var(--txt2)' }}>Sem dono</span>
+                      </div>
+                      <strong>{stats.totals.unassignedConversations}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: 14, borderRadius: 18, background: 'rgba(255,255,255,.03)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <MessageSquare size={16} color="var(--error)" />
+                        <span style={{ color: 'var(--txt2)' }}>Escalonadas</span>
+                      </div>
+                      <strong>{stats.totals.escalatedConversations}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: 14, borderRadius: 18, background: 'rgba(255,255,255,.03)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <Bot size={16} color="var(--warn)" />
+                        <span style={{ color: 'var(--txt2)' }}>IA pausada</span>
+                      </div>
+                      <strong>{stats.totals.aiPausedConversations}</strong>
+                    </div>
+                    <div style={{ padding: 14, borderRadius: 18, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
+                      <div style={{ color: 'var(--txt3)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
+                        Backlog por fila
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {stats.totals.queueBacklog.length ? stats.totals.queueBacklog.map(([queue, count]) => (
+                          <StatusPill key={queue} tone="default">{queue}: {count}</StatusPill>
+                        )) : <StatusPill tone="success">sem backlog</StatusPill>}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
               </div>
             </GlassCard>
           </div>

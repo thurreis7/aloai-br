@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:phase6": "powershell -ExecutionPolicy Bypass -File scripts/smoke/phase6-critical-paths.ps1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",

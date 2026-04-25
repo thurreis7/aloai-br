@@ -1,9 +1,12 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common'
 import { SupabaseService } from './supabase.service'
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export type RequestAccessContext = {
   user: { id: string; email?: string | null }
@@ -58,7 +61,15 @@ export class AccessService {
     return context
   }
 
+  assertUuid(value: string, fieldName: string) {
+    const normalized = String(value || '').trim()
+    if (!UUID_PATTERN.test(normalized)) {
+      throw new BadRequestException(`${fieldName} invalido.`)
+    }
+  }
+
   async assertWorkspaceAccess(context: RequestAccessContext, workspaceId: string) {
+    this.assertUuid(workspaceId, 'workspaceId')
     if (context.isOwner) return
     if (!workspaceId || !context.workspaceIds.includes(workspaceId)) {
       throw new ForbiddenException('Acesso negado ao workspace informado.')

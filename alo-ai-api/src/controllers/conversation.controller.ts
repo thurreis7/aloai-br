@@ -9,6 +9,11 @@ export class ConversationController {
     private readonly conversationService: ConversationService,
   ) {}
 
+  private assertWorkspaceAndConversationIds(workspaceId: string, conversationId: string) {
+    this.accessService.assertUuid(workspaceId, 'workspaceId')
+    this.accessService.assertUuid(conversationId, 'conversationId')
+  }
+
   @Post('/:conversationId/messages')
   async sendMessage(
     @Headers('authorization') authorization: string | undefined,
@@ -16,6 +21,7 @@ export class ConversationController {
     @Param('conversationId') conversationId: string,
     @Body() body: { text?: string },
   ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
 
@@ -38,6 +44,7 @@ export class ConversationController {
     @Param('conversationId') conversationId: string,
     @Body() body: { state?: string },
   ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
     if (!context.isOwner && !['owner', 'admin', 'supervisor'].includes(context.role)) {
@@ -59,6 +66,7 @@ export class ConversationController {
     @Param('conversationId') conversationId: string,
     @Body() body: { assignedTo?: string },
   ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
     if (!context.isOwner && !['owner', 'admin', 'supervisor'].includes(context.role)) {
@@ -67,6 +75,7 @@ export class ConversationController {
 
     const assignedTo = String(body?.assignedTo || '').trim()
     if (!assignedTo) throw new BadRequestException('assignedTo e obrigatorio.')
+    this.accessService.assertUuid(assignedTo, 'assignedTo')
 
     return this.conversationService.assignConversation({
       workspaceId,
@@ -82,6 +91,7 @@ export class ConversationController {
     @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
   ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
 
@@ -99,6 +109,7 @@ export class ConversationController {
     @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
   ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
 
@@ -116,6 +127,7 @@ export class ConversationController {
     @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
   ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
 
@@ -134,6 +146,7 @@ export class ConversationController {
     @Param('conversationId') conversationId: string,
     @Body() body: { reason?: string; note?: string },
   ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
 
@@ -153,6 +166,7 @@ export class ConversationController {
     @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
   ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
 
