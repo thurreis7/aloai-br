@@ -4,6 +4,13 @@ export const CHANNEL_TYPE_ALIASES = {
   gmail: 'email',
 }
 
+export const DEFAULT_AI_CHANNEL_POLICY = {
+  whatsapp: true,
+  instagram: false,
+  email: true,
+  webchat: true,
+}
+
 export const CHANNEL_LIBRARY = [
   {
     type: 'whatsapp',
@@ -106,6 +113,22 @@ export function canComposeOnChannel(type, direction = 'outbound') {
   const normalized = normalizeChannelType(type)
   if (normalized === 'instagram' && direction === 'inbound') return false
   return true
+}
+
+export function normalizeAiChannelPolicy(policy) {
+  const source = policy && typeof policy === 'object' && !Array.isArray(policy) ? policy : {}
+  return {
+    whatsapp: Boolean(source.whatsapp ?? DEFAULT_AI_CHANNEL_POLICY.whatsapp),
+    instagram: Boolean(source.instagram ?? DEFAULT_AI_CHANNEL_POLICY.instagram),
+    email: Boolean(source.email ?? DEFAULT_AI_CHANNEL_POLICY.email),
+    webchat: Boolean(source.webchat ?? DEFAULT_AI_CHANNEL_POLICY.webchat),
+  }
+}
+
+export function isAiAllowedOnChannel(policy, type) {
+  const normalized = normalizeChannelType(type)
+  if (!normalized) return true
+  return normalizeAiChannelPolicy(policy)[normalized] !== false
 }
 
 export function normalizeStoredChannel(channel) {

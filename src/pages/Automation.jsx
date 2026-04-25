@@ -1,43 +1,146 @@
-import { useMemo, useState } from 'react'
-import { Bot, Clock3, Sparkles, Wand2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Bot, Clock3, ShieldCheck, Sparkles, Wand2 } from 'lucide-react'
+import { apiJson } from '../lib/api'
+import { DEFAULT_AI_CHANNEL_POLICY, normalizeAiChannelPolicy } from '../lib/channels'
 import { useAuth } from '../hooks/useAuth'
+import { usePermissions } from '../hooks/usePermissions'
 import { EmptyState, GlassCard, PageHeader, PageShell, StatusPill } from '../components/app/WorkspaceUI'
 
 const DEFAULT_STATE = {
-  enabled: true,
+  enabled: false,
+  autoReplyEnabled: false,
   tone: 'consultivo',
-  schedule: '08:00 - 20:00',
-  channels: ['whatsapp', 'webchat'],
-  rules: [
-    { id: 1, if: 'Lead novo fora do horario', then: 'Assumir com IA e marcar follow-up' },
-    { id: 2, if: 'Mensagem sem resposta ha 10 min', then: 'Priorizar na fila do supervisor' },
-    { id: 3, if: 'Pedido de proposta', then: 'Mover para negociacao e atribuir comercial' },
-  ],
-  shortcuts: ['/boasvindas', '/precos', '/agendar-demo'],
+  confidenceThreshold: 0.7,
+  channelPolicy: DEFAULT_AI_CHANNEL_POLICY,
+  schedulePolicy: {
+    mode: 'always',
+    timezone: 'America/Sao_Paulo',
+    days: [1, 2, 3, 4, 5],
+    start: '08:00',
+    end: '20:00',
+    summary: '08:00 - 20:00',
+  },
 }
 
 export default function Automation() {
-  const { wsRole } = useAuth()
-  const storageKey = useMemo(() => `alo-automation-${wsRole?.workspace_id || 'default'}`, [wsRole])
-  const [state, setState] = useState(() => {
-    const saved = localStorage.getItem(storageKey)
-    return saved ? JSON.parse(saved) : DEFAULT_STATE
-  })
-  const [newShortcut, setNewShortcut] = useState('')
+  const { wsRole, ws } = useAuth()
+  const { canEditAiConfig } = usePermissions()
+  const workspaceId = wsRole?.workspace_id || ws?.id || null
+  const [state, setState] = useState(DEFAULT_STATE)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [savedAt, setSavedAt] = useState('')
 
-  function persist(nextState) {
-    setState(nextState)
-    localStorage.setItem(storageKey, JSON.stringify(nextState))
+  useEffect(() => {
+    let ignore = false
+
+    async function loadConfig() {
+      if (!workspaceId) {
+        setLoading(false)
+        return
+      }
+
+      setLoading(true)
+      setError('')
+      try {
+        const { config } = await apiJson(`/workspaces/${workspaceId}/ai-assist/config`)
+        if (ignore) return
+
+        setState({
+          enabled: Boolean(config?.enabled),
+          autoReplyEnabled: Boolean(config?.autoReplyEnabled),
+          tone: config?.tone || 'consultivo',
+          confidenceThreshold: Number(config?.confidenceThreshold || 0.7),
+          channelPolicy: normalizeAiChannelPolicy(config?.channelPolicy),
+          schedulePolicy: {
+            ...DEFAULT_STATE.schedulePolicy,
+            ...(config?.schedulePolicy || {}),
+          },
+        })
+        setSavedAt(config?.updatedAt || '')
+      } catch (err) {
+        if (!ignore) setError(err.message || 'Nao foi possivel carregar a politica de IA.')
+      } finally {
+        if (!ignore) setLoading(false)
+      }
+    }
+
+    loadConfig()
+    return () => { ignore = true }
+  }, [workspaceId])
+
+  async function persist(nextState = state) {
+    if (!workspaceId || !canEditAiConfig) return
+
+    setSaving(true)
+    setError('')
+    try {
+      const { config } = await apiJson(`/workspaces/${workspaceId}/ai-assist/config`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          enabled: nextState.enabled,
+          autoReplyEnabled: nextState.autoReplyEnabled,
+          tone: nextState.tone,
+          confidenceThreshold: nextState.confidenceThreshold,
+          channelPolicy: nextState.channelPolicy,
+          schedulePolicy: nextState.schedulePolicy,
+        }),
+      })
+
+      setState({
+        enabled: Boolean(config?.enabled),
+        autoReplyEnabled: Boolean(config?.autoReplyEnabled),
+        tone: config?.tone || 'consultivo',
+        confidenceThreshold: Number(config?.confidenceThreshold || 0.7),
+        channelPolicy: normalizeAiChannelPolicy(config?.channelPolicy),
+        schedulePolicy: {
+          ...DEFAULT_STATE.schedulePolicy,
+          ...(config?.schedulePolicy || {}),
+        },
+      })
+      setSavedAt(config?.updatedAt || new Date().toISOString())
+    } catch (err) {
+      setError(err.message || 'Nao foi possivel salvar a politica de IA.')
+    } finally {
+      setSaving(false)
+    }
   }
+
+  const enabledChannels = useMemo(
+    () => Object.entries(state.channelPolicy).filter(([, allowed]) => allowed).map(([channel]) => channel),
+    [state.channelPolicy],
+  )
+
+  const statusLabel = state.enabled ? 'IA ativa' : 'IA pausada'
 
   return (
     <PageShell>
       <PageHeader
         eyebrow="Agente IA"
-        title="Automacao clara, configuravel e vendavel"
-        description="Ativacao do agente, comportamento operacional, regras automaticas e atalhos em uma mesma experiencia."
-        actions={<StatusPill tone={state.enabled ? 'success' : 'warning'}>{state.enabled ? 'IA ativa' : 'IA pausada'}</StatusPill>}
+        title="Politica operacional do workspace"
+        description="Esta tela deixa de ser um mock local e passa a gravar enablement, tom, threshold e janelas de sugestao no contrato do backend."
+        actions={
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <StatusPill tone={state.enabled ? 'success' : 'warning'}>{statusLabel}</StatusPill>
+            <button
+              type="button"
+              className="workspace-button"
+              disabled={!canEditAiConfig || loading || saving}
+              onClick={() => persist()}
+              title={canEditAiConfig ? '' : 'Somente owner e admin podem editar a politica de IA.'}
+            >
+              {saving ? 'Salvando...' : 'Salvar politica'}
+            </button>
+          </div>
+        }
       />
+
+      {error ? (
+        <GlassCard style={{ padding: 22, marginBottom: 16 }}>
+          <EmptyState icon="!" title="Politica indisponivel" description={error} />
+        </GlassCard>
+      ) : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) 360px', gap: 16 }}>
         <div style={{ display: 'grid', gap: 16 }}>
@@ -49,13 +152,14 @@ export default function Automation() {
                   <strong>Ativacao do agente</strong>
                 </div>
                 <p style={{ color: 'var(--txt3)', marginTop: 10, lineHeight: 1.6 }}>
-                  Controle a automacao por workspace mantendo clareza de horario, tom e canais permitidos.
+                  O enablement controla se o workspace pode receber sugestoes on-demand no Inbox.
                 </p>
               </div>
               <button
                 type="button"
                 className={state.enabled ? 'workspace-button' : 'workspace-button workspace-button--secondary'}
-                onClick={() => persist({ ...state, enabled: !state.enabled })}
+                disabled={!canEditAiConfig || loading}
+                onClick={() => setState((current) => ({ ...current, enabled: !current.enabled }))}
               >
                 {state.enabled ? 'Desativar' : 'Ativar'}
               </button>
@@ -71,8 +175,9 @@ export default function Automation() {
               <select
                 className="workspace-select"
                 style={{ marginTop: 14 }}
+                disabled={!canEditAiConfig || loading}
                 value={state.tone}
-                onChange={(event) => persist({ ...state, tone: event.target.value })}
+                onChange={(event) => setState((current) => ({ ...current, tone: event.target.value }))}
               >
                 <option value="consultivo">Consultivo</option>
                 <option value="direto">Direto</option>
@@ -82,66 +187,77 @@ export default function Automation() {
 
             <GlassCard style={{ padding: 20 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <Clock3 size={16} color="var(--warn)" />
-                <span style={{ color: 'var(--txt3)' }}>Horario</span>
+                <ShieldCheck size={16} color="var(--warn)" />
+                <span style={{ color: 'var(--txt3)' }}>Threshold</span>
               </div>
               <input
                 className="workspace-input"
                 style={{ marginTop: 14 }}
-                value={state.schedule}
-                onChange={(event) => persist({ ...state, schedule: event.target.value })}
+                type="number"
+                min="0.1"
+                max="0.999"
+                step="0.01"
+                disabled={!canEditAiConfig || loading}
+                value={state.confidenceThreshold}
+                onChange={(event) => setState((current) => ({ ...current, confidenceThreshold: Number(event.target.value || 0.7) }))}
               />
             </GlassCard>
 
             <GlassCard style={{ padding: 20 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <Wand2 size={16} color="var(--success)" />
-                <span style={{ color: 'var(--txt3)' }}>Canais</span>
+                <Clock3 size={16} color="var(--warn)" />
+                <span style={{ color: 'var(--txt3)' }}>Janela</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
-                {['whatsapp', 'instagram', 'email', 'webchat'].map((channel) => (
-                  <button
-                    key={channel}
-                    type="button"
-                    onClick={() => {
-                      const active = state.channels.includes(channel)
-                      persist({
-                        ...state,
-                        channels: active ? state.channels.filter((item) => item !== channel) : [...state.channels, channel],
-                      })
-                    }}
-                    style={{
-                      border: state.channels.includes(channel) ? '1px solid var(--selection-border)' : '1px solid transparent',
-                      borderRadius: 999,
-                      padding: '8px 12px',
-                      cursor: 'pointer',
-                      background: state.channels.includes(channel) ? 'var(--selection-bg)' : 'rgba(255,255,255,.05)',
-                      color: state.channels.includes(channel) ? 'var(--selection-text)' : 'var(--txt3)',
-                    }}
-                  >
-                    {channel}
-                  </button>
-                ))}
-              </div>
+              <input
+                className="workspace-input"
+                style={{ marginTop: 14 }}
+                disabled={!canEditAiConfig || loading}
+                value={state.schedulePolicy.summary}
+                onChange={(event) => setState((current) => ({
+                  ...current,
+                  schedulePolicy: {
+                    ...current.schedulePolicy,
+                    mode: 'window',
+                    summary: event.target.value,
+                  },
+                }))}
+              />
             </GlassCard>
           </div>
 
           <GlassCard style={{ padding: 22 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 16 }}>
               <div>
-                <strong>Regras automaticas</strong>
-                <p style={{ color: 'var(--txt3)', marginTop: 8 }}>If → assign para priorizar filas, follow-up e roteamento.</p>
+                <strong>Canais liberados para sugestao</strong>
+                <p style={{ color: 'var(--txt3)', marginTop: 8 }}>A policy afeta apenas a disponibilidade das sugestoes em Phase 3. Ela nao concede envio automatico.</p>
               </div>
-              <StatusPill tone="info">{state.rules.length} regras</StatusPill>
+              <StatusPill tone="info">{enabledChannels.length} canais</StatusPill>
             </div>
-            <div className="workspace-list">
-              {state.rules.map((rule) => (
-                <div key={rule.id} style={{ padding: 16, borderRadius: 18, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
-                  <div style={{ color: 'var(--txt4)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em' }}>if</div>
-                  <div style={{ marginTop: 6, fontWeight: 700 }}>{rule.if}</div>
-                  <div style={{ color: 'var(--txt4)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em', marginTop: 14 }}>then</div>
-                  <div style={{ marginTop: 6, color: 'var(--txt2)' }}>{rule.then}</div>
-                </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {['whatsapp', 'instagram', 'email', 'webchat'].map((channel) => (
+                <button
+                  key={channel}
+                  type="button"
+                  disabled={!canEditAiConfig || loading}
+                  onClick={() => setState((current) => ({
+                    ...current,
+                    channelPolicy: {
+                      ...current.channelPolicy,
+                      [channel]: !current.channelPolicy[channel],
+                    },
+                  }))}
+                  style={{
+                    border: state.channelPolicy[channel] ? '1px solid var(--selection-border)' : '1px solid transparent',
+                    borderRadius: 999,
+                    padding: '8px 12px',
+                    cursor: canEditAiConfig ? 'pointer' : 'not-allowed',
+                    background: state.channelPolicy[channel] ? 'var(--selection-bg)' : 'rgba(255,255,255,.05)',
+                    color: state.channelPolicy[channel] ? 'var(--selection-text)' : 'var(--txt3)',
+                    opacity: canEditAiConfig ? 1 : 0.7,
+                  }}
+                >
+                  {channel}
+                </button>
               ))}
             </div>
           </GlassCard>
@@ -149,55 +265,36 @@ export default function Automation() {
 
         <div style={{ display: 'grid', gap: 16 }}>
           <GlassCard style={{ padding: 22 }}>
-            <strong>Atalhos rapidos</strong>
-            <p style={{ color: 'var(--txt3)', marginTop: 8 }}>Respostas acionadas por comando, prontas para agente humano ou IA.</p>
-            <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
-              {state.shortcuts.map((shortcut) => (
-                <div key={shortcut} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', padding: 12, borderRadius: 16, background: 'rgba(255,255,255,.03)' }}>
-                  <span>{shortcut}</span>
-                  <StatusPill tone="default">Ativo</StatusPill>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-              <input
-                className="workspace-input"
-                placeholder="/novo-atalho"
-                value={newShortcut}
-                onChange={(event) => setNewShortcut(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && newShortcut.trim()) {
-                    persist({ ...state, shortcuts: [...state.shortcuts, newShortcut.trim()] })
-                    setNewShortcut('')
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="workspace-button workspace-button--secondary"
-                onClick={() => {
-                  if (!newShortcut.trim()) return
-                  persist({ ...state, shortcuts: [...state.shortcuts, newShortcut.trim()] })
-                  setNewShortcut('')
-                }}
-              >
-                Adicionar
-              </button>
-            </div>
+            <strong>Politica de auto-reply</strong>
+            <p style={{ color: 'var(--txt3)', marginTop: 8 }}>Phase 3 grava apenas a policy. Nenhum envio automatico novo entra em producao nesta etapa.</p>
+            <button
+              type="button"
+              className={state.autoReplyEnabled ? 'workspace-button' : 'workspace-button workspace-button--secondary'}
+              style={{ marginTop: 16 }}
+              disabled={!canEditAiConfig || loading}
+              onClick={() => setState((current) => ({ ...current, autoReplyEnabled: !current.autoReplyEnabled }))}
+            >
+              {state.autoReplyEnabled ? 'Policy habilitada' : 'Policy desabilitada'}
+            </button>
           </GlassCard>
 
           <GlassCard style={{ padding: 22 }}>
             <strong>Preview operacional</strong>
             <p style={{ color: 'var(--txt3)', marginTop: 8, lineHeight: 1.6 }}>
-              Quando a IA estiver {state.enabled ? 'ativa' : 'pausada'}, ela responde em tom <strong>{state.tone}</strong>, opera no horario <strong>{state.schedule}</strong> e atua em <strong>{state.channels.join(', ') || 'nenhum canal'}</strong>.
+              Quando a IA estiver {state.enabled ? 'ativa' : 'pausada'}, o Inbox pede sugestoes em tom <strong>{state.tone}</strong>, com threshold <strong>{state.confidenceThreshold.toFixed(2)}</strong>, usando <strong>{enabledChannels.join(', ') || 'nenhum canal'}</strong> e a janela <strong>{state.schedulePolicy.summary}</strong>.
             </p>
-            {state.enabled ? null : (
+            {savedAt ? (
+              <div style={{ color: 'var(--txt3)', fontSize: 12, marginTop: 10 }}>
+                Ultima persistencia: {new Date(savedAt).toLocaleString('pt-BR')}
+              </div>
+            ) : null}
+            {!state.enabled ? (
               <EmptyState
                 icon="!"
                 title="IA em pausa"
-                description="O workspace segue apenas com atendimento humano ate reativacao."
+                description="O workspace segue com atendimento humano e sem sugestoes on-demand ate nova ativacao."
               />
-            )}
+            ) : null}
           </GlassCard>
         </div>
       </div>

@@ -16,3 +16,17 @@ export async function apiFetch(path, options = {}) {
     headers,
   })
 }
+
+export async function apiJson(path, options = {}) {
+  const response = await apiFetch(path, options)
+  const payload = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    const error = new Error(payload?.error || 'Nao foi possivel concluir a requisicao.')
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}

@@ -130,7 +130,15 @@ export function PermissionsProvider({ children }) {
   }
 
   return (
-    <PermissionsContext.Provider value={{ permissions, role, loading, can, convScope }}>
+    <PermissionsContext.Provider value={{
+      permissions,
+      role,
+      loading,
+      can,
+      convScope,
+      canEditAiConfig: isOwner || role === 'owner' || role === 'admin',
+      canViewRoutingReason: isOwner || role === 'owner' || role === 'admin' || role === 'supervisor',
+    }}>
       {children}
     </PermissionsContext.Provider>
   )

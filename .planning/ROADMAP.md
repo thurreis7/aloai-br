@@ -8,7 +8,7 @@ This brownfield roadmap turns the current product from a promising multichannel 
 
 - [x] **Phase 1: Tenant And Channel Foundations** - Align workspace access, schema assumptions, and real channel connectivity around one production-safe base.
 - [x] **Phase 2: Unified Inbox CRM Workflow** - Make all supported channels operate through one consistent inbox and conversation CRM flow.
-- [ ] **Phase 3: Workspace AI Context Layer** - Replace placeholder AI settings with workspace-grounded context, knowledge, and controllable behavior.
+- [x] **Phase 3: Workspace AI Context Layer** - Replace placeholder AI settings with workspace-grounded context, knowledge, and controllable behavior.
 - [ ] **Phase 4: Intelligent Routing And Lead Qualification** - Add prioritization, classification, qualification, and queue assignment inside the same workflow.
 - [ ] **Phase 5: Human Handoff And Copilot Controls** - Make AI escalation, agent takeover, and supervised collaboration explicit and safe.
 - [ ] **Phase 6: Operations, Security, And Verification** - Harden multitenancy, observability, and regression protection for production readiness.
@@ -55,8 +55,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: Build a persistent workspace AI context model from knowledge, FAQ, and business settings
-- [ ] 03-02: Apply workspace context to AI suggestions and automation behavior
+- [x] 03-01: Build a persistent workspace AI context model from knowledge, FAQ, and business settings
+- [x] 03-02: Apply workspace context to AI suggestions and automation behavior
 
 ### Phase 4: Intelligent Routing And Lead Qualification
 **Goal**: Route and qualify conversations intelligently so the inbox behaves like an operational CRM, not only a message feed.
@@ -123,7 +123,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 |-------|----------------|--------|-----------|
 | 1. Tenant And Channel Foundations | 2/2 | Complete | 2026-04-25 |
 | 2. Unified Inbox CRM Workflow | 2/2 | Complete | 2026-04-25 |
-| 3. Workspace AI Context Layer | 0/2 | Not started | - |
+| 3. Workspace AI Context Layer | 2/2 | Complete | 2026-04-25 |
 | 4. Intelligent Routing And Lead Qualification | 0/2 | Not started | - |
 | 5. Human Handoff And Copilot Controls | 0/2 | Not started | - |
 | 6. Operations, Security, And Verification | 0/2 | Not started | - |

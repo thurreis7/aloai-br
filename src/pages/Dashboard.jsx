@@ -68,10 +68,10 @@ export default function Dashboard() {
         since.setDate(since.getDate() - 6)
         since.setHours(0, 0, 0, 0)
 
-        const [conversationsRes, messagesRes, channelsRes, membersRes] = await Promise.all([
+        const [conversationsRes, messagesRes, channelsRes, membersRes, leadsRes] = await Promise.all([
           supabase
             .from('conversations')
-            .select('id, status, priority, created_at, last_message_at, channel_id, assigned_to')
+            .select('id, status, state, priority, routing_queue, routing_intent, created_at, last_message_at, channel_id, assigned_to')
             .eq('workspace_id', ws.id)
             .gte('created_at', since.toISOString()),
           supabase
@@ -87,11 +87,16 @@ export default function Dashboard() {
             .from('workspace_members')
             .select('id, user_id, display_name, role, is_online')
             .eq('workspace_id', ws.id),
+          supabase
+            .from('leads')
+            .select('id, status, owner_id, source_channel_id, conversation_id')
+            .eq('workspace_id', ws.id),
         ])
 
         if (conversationsRes.error) throw conversationsRes.error
         if (messagesRes.error) throw messagesRes.error
         if (channelsRes.error) throw channelsRes.error
+        if (leadsRes.error) throw leadsRes.error
         let members = []
         if (!membersRes.error && (membersRes.data || []).length) {
           members = membersRes.data || []
@@ -150,6 +155,7 @@ export default function Dashboard() {
         const conversations = conversationsRes.data || []
         const messages = messagesRes.data || []
         const channels = channelsRes.data || []
+        const leads = leadsRes.data || []
 
         const todayStart = startOfDay(new Date())
         const todayConversations = conversations.filter((item) => startOfDay(item.created_at) === todayStart)
@@ -220,6 +226,9 @@ export default function Dashboard() {
 
         const connectedChannels = channels.filter((channel) => channel.is_active).length
         const onlineAgents = members.filter((member) => member.is_online).length
+        const qualifiedLeads = leads.filter((lead) => lead.status === 'qualified').length
+        const disqualifiedLeads = leads.filter((lead) => lead.status === 'disqualified').length
+        const triageQueue = conversations.filter((conversation) => (conversation.routing_queue || 'triagem') === 'triagem').length
 
         if (!ignore) {
           setStats({
@@ -243,9 +252,9 @@ export default function Dashboard() {
                 accent: 'var(--info)',
               },
               {
-                label: 'Operacao online',
-                value: `${onlineAgents}/${Math.max(members.length, 1)}`,
-                hint: `${connectedChannels} canais ativos`,
+                label: 'Qualificacao',
+                value: `${qualifiedLeads}/${Math.max(leads.length, 1)}`,
+                hint: `${disqualifiedLeads} desqualificados`,
                 accent: 'var(--warn)',
               },
             ],
@@ -257,6 +266,10 @@ export default function Dashboard() {
             totals: {
               connectedChannels,
               automationRate: Math.round((aiMessages / Math.max(messages.length, 1)) * 100),
+              triageQueue,
+              qualifiedLeads,
+              onlineAgents,
+              teamSize: Math.max(members.length, 1),
             },
           })
         }
@@ -529,7 +542,14 @@ export default function Dashboard() {
                     <Users2 size={16} color="var(--success)" />
                     <span style={{ color: 'var(--txt2)' }}>Time em plantao</span>
                   </div>
-                  <strong>{stats.metrics[3].value}</strong>
+                  <strong>{`${stats.totals.onlineAgents}/${stats.totals.teamSize}`}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: 14, borderRadius: 18, background: 'rgba(255,255,255,.03)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <MessageSquare size={16} color="var(--info)" />
+                    <span style={{ color: 'var(--txt2)' }}>Fila triagem</span>
+                  </div>
+                  <strong>{stats.totals.triageQueue}</strong>
                 </div>
               </div>
             </GlassCard>

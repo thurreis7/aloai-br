@@ -65,7 +65,7 @@ export default function Kanban() {
         try {
           const { data, error: queryError } = await supabase
             .from('conversations')
-            .select('id, state, status, priority, last_message, last_message_at, contacts(name, company), channels(name, type)')
+            .select('id, state, status, priority, routing_queue, routing_intent, routing_reason, last_message, last_message_at, contacts(name, company), channels(name, type), leads(status, owner_id, source_channel_id)')
             .eq('workspace_id', ws.id)
             .order('last_message_at', { ascending: false })
 
@@ -73,9 +73,16 @@ export default function Kanban() {
 
         if (!ignore) {
           setCards((data || []).map((item) => ({
+            ...(() => {
+              const lead = Array.isArray(item.leads) ? item.leads[0] : item.leads
+              return { leadStatus: lead?.status || 'open' }
+            })(),
             id: item.id,
             state: normalizeConversationState(item.state, item.status),
             priority: item.priority || 'medium',
+            routingQueue: item.routing_queue || 'triagem',
+            routingIntent: item.routing_intent || 'duvida_geral',
+            routingReason: item.routing_reason || '',
             message: item.last_message || 'Sem preview',
             updatedAt: item.last_message_at,
             contactName: item.contacts?.name || 'Contato sem nome',
@@ -236,6 +243,7 @@ export default function Kanban() {
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
                         <StatusPill tone={toneForPriority(card.priority)}>{card.priority}</StatusPill>
                         <StatusPill tone="default">{card.channel}</StatusPill>
+                        <StatusPill tone="info">{card.routingQueue}</StatusPill>
                       </div>
                     </button>
                   ))}
@@ -257,6 +265,11 @@ export default function Kanban() {
                     <StatusPill tone="info">{selected.channel}</StatusPill>
                     <StatusPill tone={toneForPriority(selected.priority)}>{selected.priority}</StatusPill>
                     <StatusPill tone="default">{STATE_LABELS[selected.state]}</StatusPill>
+                    <StatusPill tone="info">{selected.routingQueue}</StatusPill>
+                    <StatusPill tone="default">{selected.routingIntent}</StatusPill>
+                    <StatusPill tone={selected.leadStatus === 'qualified' ? 'success' : selected.leadStatus === 'disqualified' ? 'error' : 'default'}>
+                      {selected.leadStatus}
+                    </StatusPill>
                   </div>
                   <h2 style={{ fontSize: 28, fontFamily: 'var(--font-display)', letterSpacing: '-.04em' }}>{selected.contactName}</h2>
                   <p style={{ color: 'var(--txt3)', marginTop: 8 }}>{selected.company}</p>
@@ -267,6 +280,11 @@ export default function Kanban() {
                     Preview da conversa
                   </div>
                   <div style={{ color: 'var(--txt2)', lineHeight: 1.7 }}>{selected.message}</div>
+                  {selected.routingReason ? (
+                    <div style={{ marginTop: 12, padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,.08)', background: 'rgba(255,255,255,.03)', color: 'var(--txt2)', lineHeight: 1.6 }}>
+                      {selected.routingReason}
+                    </div>
+                  ) : null}
                 </GlassCard>
 
                 <GlassCard style={{ margin: 0, padding: 18 }}>

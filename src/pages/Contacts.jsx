@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Search, Tags } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { apiJson } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
+import { usePermissions } from '../hooks/usePermissions'
 import { EmptyState, GlassCard, PageHeader, PageShell, SkeletonBlock, StatusPill } from '../components/app/WorkspaceUI'
 
 function avatarTone(value) {
@@ -13,6 +15,7 @@ function avatarTone(value) {
 
 export default function Contacts() {
   const { ws, loading: authLoading, workspaceReady } = useAuth()
+  const { canViewRoutingReason } = usePermissions()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [contacts, setContacts] = useState([])
@@ -20,6 +23,7 @@ export default function Contacts() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [draftTag, setDraftTag] = useState('')
+  const [qualificationSaving, setQualificationSaving] = useState(false)
 
   useEffect(() => {
     let ignore = false
@@ -41,7 +45,7 @@ export default function Contacts() {
       setLoading(true)
       setError('')
       try {
-        const [contactsRes, conversationsRes] = await Promise.all([
+        const [contactsRes, conversationsRes, leadsRes] = await Promise.all([
           supabase
             .from('contacts')
             .select('id, name, phone, email, company, tags, created_at')
@@ -49,23 +53,35 @@ export default function Contacts() {
             .order('created_at', { ascending: false }),
           supabase
             .from('conversations')
-            .select('id, contact_id, status, priority, last_message, last_message_at, channels(type, name)')
+            .select('id, contact_id, status, state, priority, routing_queue, routing_intent, routing_reason, assigned_to, channel_id, last_message, last_message_at, channels(type, name)')
             .eq('workspace_id', ws.id)
             .order('last_message_at', { ascending: false }),
+          supabase
+            .from('leads')
+            .select('id, contact_id, conversation_id, owner_id, source_channel_id, status, updated_at')
+            .eq('workspace_id', ws.id),
         ])
 
         if (contactsRes.error) throw contactsRes.error
         if (conversationsRes.error) throw conversationsRes.error
+        if (leadsRes.error) throw leadsRes.error
 
         const byContact = new Map()
         ;(conversationsRes.data || []).forEach((conversation) => {
           if (!byContact.has(conversation.contact_id)) byContact.set(conversation.contact_id, [])
           byContact.get(conversation.contact_id).push(conversation)
         })
+        const leadsByConversation = new Map((leadsRes.data || []).map((lead) => [lead.conversation_id, lead]))
+        const leadsByContact = new Map()
+        ;(leadsRes.data || []).forEach((lead) => {
+          if (!leadsByContact.has(lead.contact_id)) leadsByContact.set(lead.contact_id, [])
+          leadsByContact.get(lead.contact_id).push(lead)
+        })
 
         const nextContacts = (contactsRes.data || []).map((contact) => {
           const history = byContact.get(contact.id) || []
           const latest = history[0]
+          const latestLead = leadsByConversation.get(latest?.id) || (leadsByContact.get(contact.id) || [])[0] || null
           return {
             ...contact,
             history,
@@ -73,8 +89,15 @@ export default function Contacts() {
             latestPriority: latest?.priority || 'medium',
             latestMessage: latest?.last_message || 'Sem conversas registradas',
             latestChannel: latest?.channels?.name || latest?.channels?.type || 'Sem canal',
+            latestQueue: latest?.routing_queue || 'triagem',
+            latestIntent: latest?.routing_intent || 'duvida_geral',
+            latestReason: latest?.routing_reason || '',
+            latestConversationId: latest?.id || null,
             latestAt: latest?.last_message_at || contact.created_at,
             totalConversations: history.length,
+            leadStatus: latestLead?.status || 'open',
+            leadOwnerId: latestLead?.owner_id || latest?.assigned_to || null,
+            leadSourceChannelId: latestLead?.source_channel_id || latest?.channel_id || null,
           }
         })
 
@@ -135,6 +158,26 @@ export default function Contacts() {
     setContacts((current) => current.map((contact) => (
       contact.id === selected.id ? { ...contact, tags: nextTags } : contact
     )))
+  }
+
+  async function updateQualification(status) {
+    if (!selected?.latestConversationId || !ws?.id || !canViewRoutingReason) return
+    setQualificationSaving(true)
+    setError('')
+    try {
+      const payload = await apiJson(`/workspaces/${ws.id}/leads/conversations/${selected.latestConversationId}/qualification`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+      const nextStatus = payload?.lead?.status || status
+      setContacts((current) => current.map((contact) => (
+        contact.id === selected.id ? { ...contact, leadStatus: nextStatus } : contact
+      )))
+    } catch (err) {
+      setError(err.message || 'Nao foi possivel atualizar a qualificacao.')
+    } finally {
+      setQualificationSaving(false)
+    }
   }
 
   function handleAddTag() {
@@ -314,6 +357,9 @@ export default function Contacts() {
                 <StatusPill tone={selected.latestStatus === 'resolved' ? 'success' : 'warning'}>
                   {selected.latestStatus}
                 </StatusPill>
+                <StatusPill tone={selected.leadStatus === 'qualified' ? 'success' : selected.leadStatus === 'disqualified' ? 'error' : 'default'}>
+                  {selected.leadStatus}
+                </StatusPill>
                 <StatusPill tone="default">{selected.totalConversations} conversas</StatusPill>
               </div>
 
@@ -322,8 +368,39 @@ export default function Contacts() {
                   <InfoRow label="Telefone" value={selected.phone || 'Nao informado'} />
                   <InfoRow label="E-mail" value={selected.email || 'Nao informado'} />
                   <InfoRow label="Ultima mensagem" value={selected.latestMessage} />
+                  <InfoRow label="Fila" value={selected.latestQueue || 'triagem'} />
+                  <InfoRow label="Intencao" value={selected.latestIntent || 'duvida_geral'} />
+                  <InfoRow label="Lead status" value={selected.leadStatus || 'open'} />
                 </div>
               </GlassCard>
+
+              {canViewRoutingReason ? (
+                <GlassCard style={{ margin: 0, padding: 18 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+                    <strong style={{ fontSize: 15 }}>Qualificacao leve</strong>
+                    <StatusPill tone="default">{qualificationSaving ? 'Salvando...' : 'Supervisor'}</StatusPill>
+                  </div>
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <select
+                      className="workspace-select"
+                      value={selected.leadStatus || 'open'}
+                      disabled={!selected.latestConversationId || qualificationSaving}
+                      onChange={(event) => updateQualification(event.target.value)}
+                    >
+                      <option value="open">open</option>
+                      <option value="qualified">qualified</option>
+                      <option value="disqualified">disqualified</option>
+                    </select>
+                    {selected.latestReason ? (
+                      <div style={{ padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,.08)', background: 'rgba(255,255,255,.03)', color: 'var(--txt2)', fontSize: 13, lineHeight: 1.6 }}>
+                        {selected.latestReason}
+                      </div>
+                    ) : (
+                      <div style={{ color: 'var(--txt3)', fontSize: 13 }}>Sem log de roteamento para esta conversa.</div>
+                    )}
+                  </div>
+                </GlassCard>
+              ) : null}
 
               <GlassCard style={{ margin: 0, padding: 18 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12 }}>

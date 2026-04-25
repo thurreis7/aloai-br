@@ -108,7 +108,7 @@ export class ConversationService {
       })
       .eq('workspace_id', input.workspaceId)
       .eq('id', input.conversationId)
-      .select('id, workspace_id, state, status, priority, assigned_to, assigned_by, last_message, last_message_at, unread_count')
+      .select('id, workspace_id, state, status, priority, assigned_to, assigned_by, last_message, last_message_at, unread_count, routing_queue, routing_intent, routing_confidence, routing_reason, routing_source')
       .single()
 
     if (conversationError) {
@@ -134,7 +134,7 @@ export class ConversationService {
       .update({ state })
       .eq('workspace_id', input.workspaceId)
       .eq('id', input.conversationId)
-      .select('id, workspace_id, state, status, priority, assigned_to, assigned_by, last_message, last_message_at, unread_count')
+      .select('id, workspace_id, state, status, priority, assigned_to, assigned_by, last_message, last_message_at, unread_count, routing_queue, routing_intent, routing_confidence, routing_reason, routing_source')
       .single()
 
     if (error) throw new InternalServerErrorException(error.message)
@@ -155,7 +155,7 @@ export class ConversationService {
       })
       .eq('workspace_id', input.workspaceId)
       .eq('id', input.conversationId)
-      .select('id, workspace_id, state, status, priority, assigned_to, assigned_by, last_message, last_message_at, unread_count')
+      .select('id, workspace_id, state, status, priority, assigned_to, assigned_by, last_message, last_message_at, unread_count, routing_queue, routing_intent, routing_confidence, routing_reason, routing_source')
       .single()
 
     if (error) throw new InternalServerErrorException(error.message)
@@ -188,7 +188,7 @@ export class ConversationService {
     const { data, error } = await this.supabase.admin
       .from('conversations')
       .select(`
-        id, workspace_id, state, status, priority, assigned_to, assigned_by, unread_count,
+        id, workspace_id, state, status, priority, assigned_to, assigned_by, unread_count, routing_queue, routing_intent, routing_confidence, routing_reason, routing_source,
         contacts ( id, name, phone, email, company ),
         channels ( id, type, name, config )
       `)
