@@ -9,6 +9,7 @@ import {
   getChannelColor,
   getChannelDisplayName,
   getChannelIcon,
+  canComposeOnChannel,
   normalizeChannelType,
 } from '../lib/channels'
 
@@ -25,7 +26,25 @@ const fmtTime = (iso) => {
 
 const PRI_COLORS = { high:'#ef4444', medium:'#f59e0b', low:'#10b981' }
 const PRI_LABELS = { high:'Alta', medium:'Média', low:'Baixa' }
-const ST_LABELS  = { open:'Aberto', waiting:'Aguardando', resolved:'Resolvido', bot:'IA ativa' }
+const STATE_LABELS = {
+  new:'Novo',
+  open:'Aberto',
+  ai_handling:'IA ativa',
+  human_handling:'Atendimento humano',
+  waiting_customer:'Aguardando cliente',
+  closed:'Encerrado',
+}
+const STATE_FILTERS = ['all', 'new', 'open', 'ai_handling', 'human_handling', 'waiting_customer', 'closed']
+
+const normalizeConversationState = (state, status) => {
+  const candidate = String(state || status || 'new').trim().toLowerCase()
+  if (['new', 'open', 'ai_handling', 'human_handling', 'waiting_customer', 'closed'].includes(candidate)) return candidate
+  if (candidate === 'resolved') return 'closed'
+  if (candidate === 'waiting') return 'waiting_customer'
+  if (candidate === 'bot') return 'ai_handling'
+  if (candidate === 'open') return 'open'
+  return 'new'
+}
 
 const initials = (name) =>
   (name || '?').split(' ').map(n => n[0]).slice(0,2).join('').toUpperCase()
@@ -58,7 +77,7 @@ export default function Inbox() {
   const [input,       setInput]       = useState('')
   const [sending,     setSending]     = useState(false)
   const [search,      setSearch]      = useState('')
-  const [filterStatus,setFilterStatus]= useState('all')
+  const [filterState,setFilterState]= useState('all')
   const [aiSug,       setAiSug]       = useState('')
   const [aiLoading,   setAiLoading]   = useState(false)
   const [showPanel,   setShowPanel]   = useState(true)
@@ -74,9 +93,11 @@ export default function Inbox() {
     const matchSearch = !search ||
       c.contact_name?.toLowerCase().includes(search.toLowerCase()) ||
       c.last_message?.toLowerCase().includes(search.toLowerCase())
-    const matchStatus = filterStatus === 'all' || c.status === filterStatus
-    return matchSearch && matchStatus
+    const matchState = filterState === 'all' || c.state === filterState
+    return matchSearch && matchState
   })
+  const composerLocked = activeConv?.channel_type === 'instagram' || !canComposeOnChannel(activeConv?.channel_type)
+  const canWriteReply = can('perm_reply') && !composerLocked && activeConv?.state !== 'closed'
 
   /* ═══════════════════════════════════════════════════
      LOAD CONVERSATIONS
@@ -99,7 +120,7 @@ export default function Inbox() {
       let query = supabase
         .from('conversations')
         .select(`
-          id, status, priority, unread_count,
+          id, state, status, priority, unread_count,
           last_message, last_message_at, created_at,
           assigned_to,
           contacts ( id, name, phone, company, email ),
@@ -233,11 +254,10 @@ export default function Inbox() {
      ═══════════════════════════════════════════════════ */
   const markAsRead = async (convId) => {
     setConvs(prev => prev.map(c => c.id === convId ? { ...c, unread: 0 } : c))
-    await supabase.from('conversations').update({ unread_count: 0 }).eq('id', convId)
   }
 
   const sendMessage = async () => {
-    if (!input.trim() || !activeId || sending || !can('perm_reply')) return
+    if (!input.trim() || !activeId || sending || !canWriteReply) return
     const text = input.trim()
     setInput('')
     setSending(true)
@@ -247,47 +267,26 @@ export default function Inbox() {
     setMsgs(prev => ({ ...prev, [activeId]: [...(prev[activeId] || []), tempMsg] }))
 
     try {
-      /* 1. Salva no Supabase */
-      const { data: saved, error } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: activeId,
-          sender_id:   user.id,
-          sender_type: 'agent',
-          content:     text,
-        })
-        .select()
-        .single()
+      const response = await apiFetch(`/workspaces/${ws?.id}/conversations/${activeId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Nao foi possivel enviar a mensagem.')
+      }
 
-      if (error) throw error
-
-      /* 2. Substitui msg temporária pela real */
+      const saved = payload?.message
+      const conversation = payload?.conversation
       setMsgs(prev => ({
         ...prev,
         [activeId]: (prev[activeId] || []).map(m =>
-          m.id === tempMsg.id ? mapMsg(saved) : m
+          m.id === tempMsg.id ? (saved ? mapMsg(saved) : m) : m
         ),
       }))
-
-      /* 3. Envia pelo WhatsApp se tiver número */
-      if (activeConv?.contact_phone && activeConv?.channel_type === 'whatsapp') {
-        apiFetch(`/workspaces/${ws?.id}/channels/whatsapp/send`, {
-          method: 'POST',
-          body: JSON.stringify({
-            phone:    activeConv.contact_phone,
-            text,
-            instance: `aloai-${activeConv.channel_id}`,
-            workspaceId: ws?.id,
-          }),
-        }).catch(console.error) // não bloqueia o fluxo
+      if (conversation) {
+        setConvs(prev => prev.map(c => (c.id === activeId ? { ...c, ...mapConvPartial(conversation) } : c)))
       }
-
-      /* 4. Atualiza last_message */
-      await supabase.from('conversations').update({
-        last_message:    text,
-        last_message_at: new Date().toISOString(),
-      }).eq('id', activeId)
-
     } catch (e) {
       console.error('Erro ao enviar mensagem:', e)
       /* Reverte optimistic */
@@ -331,19 +330,39 @@ export default function Inbox() {
 
   const closeConv = async () => {
     if (!activeId || !can('perm_close')) return
-    await supabase.from('conversations')
-      .update({ status: 'resolved' })
-      .eq('id', activeId)
-    setConvs(prev => prev.map(c =>
-      c.id === activeId ? { ...c, status: 'resolved' } : c
-    ))
+    try {
+      const response = await apiFetch(`/workspaces/${ws?.id}/conversations/${activeId}/close`, {
+        method: 'POST',
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Nao foi possivel encerrar a conversa.')
+      }
+      if (payload?.conversation) {
+        setConvs(prev => prev.map(c => (c.id === activeId ? { ...c, ...mapConvPartial(payload.conversation) } : c)))
+      }
+    } catch (error) {
+      console.error('Erro ao encerrar conversa:', error)
+    }
   }
 
   const transferConv = async (toUserId) => {
     if (!activeId || !can('perm_transfer')) return
-    await supabase.from('conversations')
-      .update({ assigned_to: toUserId })
-      .eq('id', activeId)
+    try {
+      const response = await apiFetch(`/workspaces/${ws?.id}/conversations/${activeId}/assignment`, {
+        method: 'PATCH',
+        body: JSON.stringify({ assignedTo: toUserId }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Nao foi possivel reatribuir a conversa.')
+      }
+      if (payload?.conversation) {
+        setConvs(prev => prev.map(c => (c.id === activeId ? { ...c, ...mapConvPartial(payload.conversation) } : c)))
+      }
+    } catch (error) {
+      console.error('Erro ao reatribuir conversa:', error)
+    }
   }
 
   /* ═══════════════════════════════════════════════════
@@ -353,7 +372,8 @@ export default function Inbox() {
     const channelType = normalizeChannelType(c.channels?.type)
     return {
     id:              c.id,
-    status:          c.status,
+    state:           normalizeConversationState(c.state, c.status),
+    status:          c.status || c.state || 'new',
     priority:        c.priority || 'medium',
     unread:          c.unread_count || 0,
     last_message:    c.last_message || '',
@@ -371,7 +391,8 @@ export default function Inbox() {
   }
 
   const mapConvPartial = (c) => ({
-    status:          c.status,
+    state:           normalizeConversationState(c.state, c.status),
+    status:          c.status || c.state || 'new',
     priority:        c.priority,
     unread:          c.unread_count || 0,
     last_message:    c.last_message,
@@ -415,13 +436,21 @@ export default function Inbox() {
             />
           </div>
           <div style={s.filterRow}>
-            {['all','open','waiting','resolved'].map(st => (
+            {STATE_FILTERS.map(st => (
               <button
                 key={st}
-                style={{...s.filterBtn, ...(filterStatus===st ? s.filterBtnActive : {})}}
-                onClick={() => setFilterStatus(st)}
+                style={{...s.filterBtn, ...(filterState===st ? s.filterBtnActive : {})}}
+                onClick={() => setFilterState(st)}
               >
-                {{ all:'Todas', open:'Abertas', waiting:'Aguardando', resolved:'Resolvidas' }[st]}
+                {{
+                  all:'Todas',
+                  new:'Novas',
+                  open:'Abertas',
+                  ai_handling:'IA ativa',
+                  human_handling:'Humanas',
+                  waiting_customer:'Aguardando cliente',
+                  closed:'Encerradas',
+                }[st]}
               </button>
             ))}
           </div>
@@ -452,13 +481,13 @@ export default function Inbox() {
               }}
             >
               {/* Avatar */}
-              <div style={{...s.avatar, background: avatarColor(c.contact_name)}}>
-                {initials(c.contact_name)}
-                <div style={{
-                  ...s.avatarStatus,
-                  background: c.status === 'resolved' ? '#10b981' : c.status === 'waiting' ? '#f59e0b' : '#7c3aed',
-                }} />
-              </div>
+                <div style={{...s.avatar, background: avatarColor(c.contact_name)}}>
+                  {initials(c.contact_name)}
+                  <div style={{
+                    ...s.avatarStatus,
+                    background: c.state === 'closed' ? '#10b981' : c.state === 'waiting_customer' ? '#f59e0b' : '#7c3aed',
+                  }} />
+                </div>
 
               {/* Info */}
               <div style={s.convInfo}>
@@ -521,7 +550,7 @@ export default function Inbox() {
             </div>
 
             <div style={{marginLeft:'auto', display:'flex', gap:8}}>
-              {can('perm_close') && activeConv.status !== 'resolved' && (
+              {can('perm_close') && activeConv.state !== 'closed' && (
                 <button style={s.headerBtn} onClick={closeConv} title="Encerrar">✓ Encerrar</button>
               )}
               <button
@@ -605,21 +634,23 @@ export default function Inbox() {
           <div style={s.inputRow}>
             <input
               ref={inputRef}
-              style={{...s.inputField, ...(activeConv.status === 'resolved' ? {opacity:.5} : {})}}
+              style={{...s.inputField, ...(composerLocked || activeConv.state === 'closed' ? {opacity:.5} : {})}}
               placeholder={
                 !can('perm_reply')       ? 'Sem permissão para responder' :
-                activeConv.status === 'resolved' ? 'Conversa encerrada' :
+                composerLocked ? 'Instagram inbound é somente leitura' :
+                activeConv.state === 'closed' ? 'Conversa encerrada' :
                 'Digite uma mensagem...'
               }
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-              disabled={!can('perm_reply') || activeConv.status === 'resolved' || sending}
+              disabled={!canWriteReply || sending}
+              title={composerLocked ? 'Instagram inbound não permite envio direto pelo composer.' : ''}
             />
             <button
-              style={{...s.sendBtn, opacity: sending || !input.trim() ? .5 : 1}}
+              style={{...s.sendBtn, opacity: sending || !input.trim() || !canWriteReply ? .5 : 1}}
               onClick={sendMessage}
-              disabled={sending || !input.trim() || !can('perm_reply')}
+              disabled={sending || !input.trim() || !canWriteReply}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="22" y1="2" x2="11" y2="13"/>
@@ -648,8 +679,8 @@ export default function Inbox() {
                 <ChannelGlyph type={activeConv.channel_type} size={12} />
                 {activeConv.channel_name}
               </span>
-              <span style={{...s.chanTag, color: activeConv.status === 'resolved' ? '#10b981' : '#7c3aed', background: activeConv.status === 'resolved' ? 'rgba(16,185,129,.1)' : 'rgba(124,58,237,.1)'}}>
-                {ST_LABELS[activeConv.status] || activeConv.status}
+              <span style={{...s.chanTag, color: activeConv.state === 'closed' ? '#10b981' : '#7c3aed', background: activeConv.state === 'closed' ? 'rgba(16,185,129,.1)' : 'rgba(124,58,237,.1)'}}>
+                {STATE_LABELS[activeConv.state] || activeConv.state}
               </span>
             </div>
           </div>
@@ -664,7 +695,7 @@ export default function Inbox() {
               ['E-mail',     activeConv.contact_email  || '—'],
               ['Empresa',    activeConv.contact_company|| '—'],
               ['Prioridade', PRI_LABELS[activeConv.priority] || '—'],
-              ['Status',     ST_LABELS[activeConv.status] || '—'],
+              ['Estado',     STATE_LABELS[activeConv.state] || '—'],
             ].map(([k,v]) => (
               <div key={k} style={s.panelRow}>
                 <span style={s.panelKey}>{k}</span>
@@ -691,9 +722,9 @@ export default function Inbox() {
           </div>
 
           {/* Actions */}
-          {can('perm_close') && activeConv.status !== 'resolved' && (
+          {can('perm_close') && activeConv.state !== 'closed' && (
             <button style={s.resolveBtn} onClick={closeConv}>
-              ✓ Marcar como resolvido
+              ✓ Encerrar conversa
             </button>
           )}
         </div>

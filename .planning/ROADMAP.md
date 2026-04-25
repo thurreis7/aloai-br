@@ -6,8 +6,8 @@ This brownfield roadmap turns the current product from a promising multichannel 
 
 ## Phases
 
-- [ ] **Phase 1: Tenant And Channel Foundations** - Align workspace access, schema assumptions, and real channel connectivity around one production-safe base.
-- [ ] **Phase 2: Unified Inbox CRM Workflow** - Make all supported channels operate through one consistent inbox and conversation CRM flow.
+- [x] **Phase 1: Tenant And Channel Foundations** - Align workspace access, schema assumptions, and real channel connectivity around one production-safe base.
+- [x] **Phase 2: Unified Inbox CRM Workflow** - Make all supported channels operate through one consistent inbox and conversation CRM flow.
 - [ ] **Phase 3: Workspace AI Context Layer** - Replace placeholder AI settings with workspace-grounded context, knowledge, and controllable behavior.
 - [ ] **Phase 4: Intelligent Routing And Lead Qualification** - Add prioritization, classification, qualification, and queue assignment inside the same workflow.
 - [ ] **Phase 5: Human Handoff And Copilot Controls** - Make AI escalation, agent takeover, and supervised collaboration explicit and safe.
@@ -27,8 +27,8 @@ This brownfield roadmap turns the current product from a promising multichannel 
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: Audit and unify tenant, workspace, and channel schema assumptions across app surfaces
-- [ ] 01-02: Connect real channel configuration and status flows to workspace data
+- [x] 01-01: Audit and unify tenant, workspace, and channel schema assumptions across app surfaces
+- [x] 01-02: Connect real channel configuration and status flows to workspace data
 
 ### Phase 2: Unified Inbox CRM Workflow
 **Goal**: Deliver one inbox workflow where all supported channels share conversation, contact, assignment, and status handling.
@@ -41,8 +41,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: Implement canonical conversation ingestion, retrieval, and cross-channel inbox rendering
-- [ ] 02-02: Link inbox actions to CRM state, assignments, and realtime updates
+- [x] 02-01: Implement canonical conversation ingestion, retrieval, and cross-channel inbox rendering
+- [x] 02-02: Link inbox actions to CRM state, assignments, and realtime updates
 
 ### Phase 3: Workspace AI Context Layer
 **Goal**: Make AI behavior use workspace-specific knowledge, business context, tone, and operating rules instead of placeholders.
@@ -121,8 +121,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Tenant And Channel Foundations | 0/2 | Not started | - |
-| 2. Unified Inbox CRM Workflow | 0/2 | Not started | - |
+| 1. Tenant And Channel Foundations | 2/2 | Complete | 2026-04-25 |
+| 2. Unified Inbox CRM Workflow | 2/2 | Complete | 2026-04-25 |
 | 3. Workspace AI Context Layer | 0/2 | Not started | - |
 | 4. Intelligent Routing And Lead Qualification | 0/2 | Not started | - |
 | 5. Human Handoff And Copilot Controls | 0/2 | Not started | - |

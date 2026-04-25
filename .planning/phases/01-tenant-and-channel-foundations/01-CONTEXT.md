@@ -1,7 +1,7 @@
 # Phase 1: Tenant And Channel Foundations - Context
 
 **Gathered:** 2026-04-24
-**Status:** Ready for planning
+**Status:** Shipped
 **Source:** Brownfield synthesis from roadmap, requirements, project constraints, and codebase map
 
 <domain>
@@ -98,3 +98,4 @@ The delivery boundary for this phase is:
 
 *Phase: 01-tenant-and-channel-foundations*
 *Context gathered: 2026-04-24 via brownfield synthesis*
+*Shipped: 2026-04-25 via tag `phase-1-ship` on `main`*

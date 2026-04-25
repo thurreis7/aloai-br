@@ -102,6 +102,12 @@ export function getChannelDisplayName(type, name) {
   return getChannelDefinition(type).defaultDisplayName
 }
 
+export function canComposeOnChannel(type, direction = 'outbound') {
+  const normalized = normalizeChannelType(type)
+  if (normalized === 'instagram' && direction === 'inbound') return false
+  return true
+}
+
 export function normalizeStoredChannel(channel) {
   if (!channel) return channel
   const normalizedType = normalizeChannelType(channel.type)

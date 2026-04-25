@@ -3,16 +3,28 @@ import { GripVertical } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { usePermissions } from '../hooks/usePermissions'
 import { useAuth } from '../hooks/useAuth'
+import { apiFetch } from '../lib/api'
 import { EmptyState, GlassCard, PageHeader, PageShell, SkeletonBlock, StatusPill } from '../components/app/WorkspaceUI'
 
-const COLUMNS = [
-  { id: 'new', label: 'Novos', tone: 'info' },
-  { id: 'open', label: 'Qualificando', tone: 'default' },
-  { id: 'waiting', label: 'Aguardando', tone: 'warning' },
-  { id: 'negotiation', label: 'Negociacao', tone: 'info' },
-  { id: 'followup', label: 'Follow-up', tone: 'warning' },
-  { id: 'resolved', label: 'Fechados', tone: 'success' },
+const STATE_COLUMNS = [
+  { id: 'new', label: 'Novo', tone: 'info' },
+  { id: 'open', label: 'Aberto', tone: 'default' },
+  { id: 'ai_handling', label: 'IA ativa', tone: 'info' },
+  { id: 'human_handling', label: 'Atendimento humano', tone: 'warning' },
+  { id: 'waiting_customer', label: 'Aguardando cliente', tone: 'warning' },
+  { id: 'closed', label: 'Encerrado', tone: 'success' },
 ]
+
+const STATE_LABELS = Object.fromEntries(STATE_COLUMNS.map((column) => [column.id, column.label]))
+
+function normalizeConversationState(state, status) {
+  const candidate = String(state || status || 'new').trim().toLowerCase()
+  if (STATE_LABELS[candidate]) return candidate
+  if (candidate === 'resolved') return 'closed'
+  if (candidate === 'waiting') return 'waiting_customer'
+  if (candidate === 'bot') return 'ai_handling'
+  return 'new'
+}
 
 function toneForPriority(priority) {
   if (priority === 'high') return 'error'
@@ -48,21 +60,21 @@ export default function Kanban() {
         return
       }
 
-      setLoading(true)
-      setError('')
-      try {
-        const { data, error: queryError } = await supabase
-          .from('conversations')
-          .select('id, status, priority, last_message, last_message_at, contacts(name, company), channels(name, type)')
-          .eq('workspace_id', ws.id)
-          .order('last_message_at', { ascending: false })
+        setLoading(true)
+        setError('')
+        try {
+          const { data, error: queryError } = await supabase
+            .from('conversations')
+            .select('id, state, status, priority, last_message, last_message_at, contacts(name, company), channels(name, type)')
+            .eq('workspace_id', ws.id)
+            .order('last_message_at', { ascending: false })
 
         if (queryError) throw queryError
 
         if (!ignore) {
           setCards((data || []).map((item) => ({
             id: item.id,
-            status: COLUMNS.some((column) => column.id === item.status) ? item.status : 'new',
+            state: normalizeConversationState(item.state, item.status),
             priority: item.priority || 'medium',
             message: item.last_message || 'Sem preview',
             updatedAt: item.last_message_at,
@@ -84,9 +96,9 @@ export default function Kanban() {
   }, [ws, authLoading, workspaceReady])
 
   const grouped = useMemo(() => {
-    return COLUMNS.map((column) => ({
+    return STATE_COLUMNS.map((column) => ({
       ...column,
-      cards: cards.filter((card) => card.status === column.id),
+      cards: cards.filter((card) => card.state === column.id),
     }))
   }, [cards])
 
@@ -96,9 +108,9 @@ export default function Kanban() {
     return (
       <PageShell contentStyle={{ gap: 16 }}>
         <PageHeader
-          eyebrow="Pipeline sincronizado"
-          title="Kanban comercial e operacional"
-          description="Conecte um workspace para habilitar o pipeline e o drag and drop."
+          eyebrow="Lifecycle sincronizado"
+          title="Kanban da conversa"
+          description="Conecte um workspace para habilitar o board e o drag and drop."
         />
         <EmptyState title="Workspace nao encontrado" description="Essa conta ainda nao foi vinculada ao workspace no Supabase." />
       </PageShell>
@@ -108,15 +120,23 @@ export default function Kanban() {
   async function moveCard(cardId, nextColumn) {
     if (!can('perm_kanban_move')) return
     const previousCards = cards
-    setCards((current) => current.map((card) => card.id === cardId ? { ...card, status: nextColumn } : card))
+    setCards((current) => current.map((card) => card.id === cardId ? { ...card, state: nextColumn } : card))
 
-    const { error: updateError } = await supabase
-      .from('conversations')
-      .update({ status: nextColumn })
-      .eq('id', cardId)
-      .eq('workspace_id', ws.id)
-
-    if (updateError) {
+    try {
+      const response = await apiFetch(`/workspaces/${ws.id}/conversations/${cardId}/state`, {
+        method: 'PATCH',
+        body: JSON.stringify({ state: nextColumn }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Nao foi possivel salvar a etapa do card.')
+      }
+      if (payload?.conversation) {
+        setCards((current) => current.map((card) => (
+          card.id === cardId ? { ...card, state: normalizeConversationState(payload.conversation.state, payload.conversation.status) } : card
+        )))
+      }
+    } catch (updateError) {
       setCards(previousCards)
       setError(updateError.message || 'Nao foi possivel salvar a etapa do card.')
     }
@@ -125,14 +145,14 @@ export default function Kanban() {
   return (
     <PageShell contentStyle={{ gap: 16 }}>
       <PageHeader
-        eyebrow="Pipeline sincronizado"
-        title="Kanban comercial e operacional"
-        description="Seis colunas fixas, drag and drop salvo no banco e leitura instantanea de prioridade, preview e acao."
+        eyebrow="Lifecycle sincronizado"
+        title="Kanban da conversa"
+        description="Seis estados canônicos, drag and drop salvo no banco e leitura instantanea de prioridade, preview e acao."
         actions={<StatusPill tone={can('perm_kanban_move') ? 'success' : 'warning'}>{can('perm_kanban_move') ? 'Edicao liberada' : 'Somente leitura'}</StatusPill>}
       />
 
       {error ? (
-        <EmptyState icon="!" title="Falha ao carregar o pipeline" description={error} />
+        <EmptyState icon="!" title="Falha ao carregar o kanban" description={error} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 16, minHeight: 640 }}>
           <div
@@ -180,7 +200,7 @@ export default function Kanban() {
                     <div style={{ fontWeight: 800 }}>{column.label}</div>
                     <div style={{ color: 'var(--txt3)', fontSize: 12 }}>{column.cards.length} cards</div>
                   </div>
-                  <StatusPill tone={column.tone}>{column.id}</StatusPill>
+                  <StatusPill tone={column.tone}>{STATE_LABELS[column.id]}</StatusPill>
                 </div>
 
                 <div style={{ display: 'grid', gap: 10 }}>
@@ -236,6 +256,7 @@ export default function Kanban() {
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                     <StatusPill tone="info">{selected.channel}</StatusPill>
                     <StatusPill tone={toneForPriority(selected.priority)}>{selected.priority}</StatusPill>
+                    <StatusPill tone="default">{STATE_LABELS[selected.state]}</StatusPill>
                   </div>
                   <h2 style={{ fontSize: 28, fontFamily: 'var(--font-display)', letterSpacing: '-.04em' }}>{selected.contactName}</h2>
                   <p style={{ color: 'var(--txt3)', marginTop: 8 }}>{selected.company}</p>
@@ -253,7 +274,7 @@ export default function Kanban() {
                     Mover rapidamente
                   </div>
                   <div style={{ display: 'grid', gap: 10 }}>
-                    {COLUMNS.filter((column) => column.id !== selected.status).map((column) => (
+                    {STATE_COLUMNS.filter((column) => column.id !== selected.state).map((column) => (
                       <button
                         key={column.id}
                         type="button"
