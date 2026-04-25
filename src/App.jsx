@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useState } from 'react'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { PermissionsProvider, usePermissions } from './hooks/usePermissions'
 import Landing             from './pages/Landing'
@@ -162,6 +163,7 @@ export default function App() {
   return (
     <AuthProvider>
       <AppWithTheme />
+      <SpeedInsights />
     </AuthProvider>
   )
 }
