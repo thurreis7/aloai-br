@@ -38,7 +38,7 @@ export class AccessService {
     const isOwner = profile?.role === 'owner' || profile?.is_owner === true
     const memberships = await this.loadMemberships(user.id)
     const workspaceIds = [...new Set(memberships.map((item) => item.workspace_id).filter(Boolean))]
-    const activeWorkspaceId = profile?.workspace_id || profile?.company_id || workspaceIds[0] || null
+    const activeWorkspaceId = profile?.workspace_id || (profile as any)?.company_id || workspaceIds[0] || null
 
     return {
       user: { id: user.id, email: user.email || null },
