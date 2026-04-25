@@ -136,7 +136,7 @@ VITE_API_URL=https://api.aloai.com.br
 
   ### Evolution API
   URL: https://evolution-api-production-2fc5.up.railway.app
-  API Key: aloai2025
+  API Key: your-api-key-here
   Instância: aloai-workspace-1
   Database: Postgres do Railway (porta 5432 direta)
 
@@ -202,7 +202,7 @@ VITE_API_URL=https://api.aloai.com.br
      | `JWT_SECRET` | `[string 32+ chars de https://generate-secret.vercel.app/32]` |
      | `PORT` | `3001` |
      | `EVOLUTION_URL` | `https://evolution-api-production-2fc5.up.railway.app` |
-     | `EVOLUTION_API_KEY` | `aloai2025` |
+      | `EVOLUTION_API_KEY` | `your-api-key-here` |
      | `FRONTEND_URL` | `https://aloai.com.br` |
 
   3. **Trigger deploy** e aguardar (~2 min)
@@ -224,10 +224,10 @@ VITE_API_URL=https://api.aloai.com.br
 
   1. Acessar Evolution API diretamente ou via backend:
   curl -X POST https://evolution-api-production-2fc5.up.railway.app/instance/create \
-       -H "apikey: aloai2025" \
+       -H "apikey: your-api-key-here" \
        -d '{"instanceName":"aloai-workspace-1","qrcode":true,"number":"","integration":"WHATSAPP-BAILEYY"}'
   2. Obter QR code:
-  curl -H "apikey: aloai2025" \
+  curl -H "apikey: your-api-key-here" \
        https://evolution-api-production-2fc5.up.railway.app/instance/qrcode/aloai-workspace-1
   3. Escanear no app WhatsApp Business
 
@@ -265,7 +265,7 @@ VITE_API_URL=https://api.aloai.com.br
 
   Evolution API (já deployada)
 
-  AUTHENTICATION_API_KEY=aloai2025
+  AUTHENTICATION_API_KEY=your-api-key-here
   DATABASE_ENABLED=true
   DATABASE_PROVIDER=postgresql
   DATABASE_URL=postgresql://postgres.railway.internal:5432/railway (auto)
@@ -280,7 +280,7 @@ VITE_API_URL=https://api.aloai.com.br
   JWT_SECRET=[string 32+ chars aleatória]
   PORT=3001
   EVOLUTION_URL=https://evolution-api-production-2fc5.up.railway.app
-  EVOLUTION_API_KEY=aloai2025
+  EVOLUTION_API_KEY=your-api-key-here
   FRONTEND_URL=https://aloai.com.br
 
   Frontend (local)

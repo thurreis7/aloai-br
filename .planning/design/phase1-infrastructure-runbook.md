@@ -74,12 +74,36 @@ Validation after wiring:
 - inbox send path resolves through the backend instead of calling Evolution directly
 - `VITE_API_URL` resolves to the Render public URL
 
-## 4. Evolution API contract
+## 4. Evolution API v2 deploy on Render
 
 Phase 1 assumption:
 
 - Evolution remains the WhatsApp transport only
 - backend is the canonical privileged caller
+
+Service type:
+
+- `Render Web Service`
+
+Container image:
+
+- `atendai/evolution-api:v2`
+
+Required env vars:
+
+- `DATABASE_URL=<Supabase direct Postgres URL on port 5432>`
+- `AUTHENTICATION_API_KEY=aloai2025`
+
+Deployment notes:
+
+- Keep Evolution isolated as a separate Render Web Service from `alo-ai-api`
+- Use the Supabase direct Postgres connection on port `5432`
+- Do not route Evolution through pgbouncer
+
+After deploy:
+
+- Update the Evolution webhook URL to `https://aloai-br-1i7u.onrender.com/webhook/whatsapp`
+- Confirm the backend receives WhatsApp webhooks on `POST /webhook/whatsapp`
 
 Critical database rule:
 
