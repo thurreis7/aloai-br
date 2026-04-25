@@ -4,7 +4,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "node --watch -r ts-node/register src/main.ts",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "start:prod": "node dist/main.js"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",

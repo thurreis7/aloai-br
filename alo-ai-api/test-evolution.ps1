@@ -3,10 +3,18 @@ $body = @{
     integration = "WHATSAPP-BAILEYS"
 } | ConvertTo-Json
 
+$evolutionUrl = $env:EVOLUTION_URL
+$evolutionApiKey = $env:EVOLUTION_API_KEY
+
+if (-not $evolutionUrl -or -not $evolutionApiKey) {
+    Write-Host "Defina EVOLUTION_URL e EVOLUTION_API_KEY antes de executar este teste."
+    exit 1
+}
+
 Write-Host "Tentando criar instancia aloai na Evolution API v2..."
 try {
-    $result = Invoke-RestMethod -Uri "https://evolution-api-production-2fc5.up.railway.app/v2/instance/create" -Method POST -Headers @{
-        "apikey" = "ev0-k3yx9mz2pqr8w4h7c5n6b3a1"
+    $result = Invoke-RestMethod -Uri "$evolutionUrl/v2/instance/create" -Method POST -Headers @{
+        "apikey" = $evolutionApiKey
         "Content-Type" = "application/json"
     } -Body $body
     Write-Host "Resposta:"

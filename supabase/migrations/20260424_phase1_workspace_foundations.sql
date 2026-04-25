@@ -653,7 +653,7 @@ begin
       when new.status = 'waiting_customer' then 'waiting_customer'
       when new.status = 'closed' then 'closed'
       else 'new'
-    end;
+    end
     else 'new'
   end;
 

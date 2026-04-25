@@ -30,7 +30,8 @@ The delivery boundary for this phase is:
 - **D-06**: Existing owner/admin permission bypass behavior stays in place unless a change is required to prevent incorrect access leakage.
 - **D-07**: Backend is the canonical privileged integration boundary in Phase 1. Supabase Edge Functions remain temporary compatibility shims or narrow ingress points only.
 - **D-08**: Phase 1 must include a timestamped migration under `supabase/migrations/` derived from `.planning/design/schema-migration.sql`.
-- **D-09**: Phase 1 must ship an operator runbook for Railway backend deployment, `VITE_API_URL`, Supabase env wiring, and Evolution `DATABASE_URL` on direct Postgres `5432` without pgbouncer.
+- **D-09**: Phase 1 must ship an operator runbook for Render backend deployment, `VITE_API_URL`, Supabase env wiring, and Evolution `DATABASE_URL` on direct Postgres `5432` without pgbouncer.
+- **D-11**: Final infrastructure decision is `Render` for backend, `Vercel` for frontend, and `Supabase` for database; keep-alive on free-tier Render is handled by external health pings if needed.
 - **D-10**: Instagram outbound remains explicitly non-blocking and deferred beyond the minimum Phase 1 contract.
 
 ### the agent's Discretion
