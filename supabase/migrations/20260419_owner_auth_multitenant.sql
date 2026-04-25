@@ -77,9 +77,25 @@ stable
 security definer
 set search_path = public
 as $$
-  select wu.workspace_id
-  from public.workspace_users wu
-  where wu.user_id = auth.uid()
+  select distinct workspace_id
+  from (
+    select wu.workspace_id
+    from public.workspace_users wu
+    where wu.user_id = auth.uid()
+
+    union all
+
+    select wm.workspace_id
+    from public.workspace_members wm
+    where wm.user_id = auth.uid()
+
+    union all
+
+    select coalesce(u.workspace_id, u.company_id)
+    from public.users u
+    where u.id = auth.uid()
+      and coalesce(u.workspace_id, u.company_id) is not null
+  ) workspace_ids
 $$;
 
 alter table public.profiles enable row level security;

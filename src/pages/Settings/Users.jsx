@@ -377,11 +377,9 @@ function InviteModal({ companyId, onClose, onCreated }) {
     setErr('')
 
     try {
-      const res = await apiFetch('/admin/users', {
+      const res = await apiFetch(`/workspaces/${companyId}/members`, {
         method: 'POST',
         body: JSON.stringify({
-          companyId,
-          workspaceId: companyId,
           fullName: name,
           email,
           password: pass,

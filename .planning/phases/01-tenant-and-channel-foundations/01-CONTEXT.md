@@ -24,10 +24,14 @@ The delivery boundary for this phase is:
 
 - **D-01**: Treat `workspace` as the canonical product concept in Phase 1. Compatibility with `companies`, `workspace_members`, `workspace_users`, and `users.company_id` must be preserved only as a brownfield fallback layer.
 - **D-02**: The canonical supported channel types for Phase 1 are exactly `whatsapp`, `instagram`, `email`, and `webchat`.
-- **D-03**: Preserve the existing route structure, page ownership, and React/Supabase/Fastify architecture. Do not redesign the app into a new structure.
+- **D-03**: The implementation target is `NestJS + Fastify`, starting from the current `alo-ai-api` service shape instead of introducing a second backend surface.
 - **D-04**: Real connection state must come from workspace-scoped records and handlers, not local placeholders or mismatched channel type names.
 - **D-05**: Any tenant or channel normalization in this phase must prioritize cross-workspace safety over convenience.
 - **D-06**: Existing owner/admin permission bypass behavior stays in place unless a change is required to prevent incorrect access leakage.
+- **D-07**: Backend is the canonical privileged integration boundary in Phase 1. Supabase Edge Functions remain temporary compatibility shims or narrow ingress points only.
+- **D-08**: Phase 1 must include a timestamped migration under `supabase/migrations/` derived from `.planning/design/schema-migration.sql`.
+- **D-09**: Phase 1 must ship an operator runbook for Railway backend deployment, `VITE_API_URL`, Supabase env wiring, and Evolution `DATABASE_URL` on direct Postgres `5432` without pgbouncer.
+- **D-10**: Instagram outbound remains explicitly non-blocking and deferred beyond the minimum Phase 1 contract.
 
 ### the agent's Discretion
 

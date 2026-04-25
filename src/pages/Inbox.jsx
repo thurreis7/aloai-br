@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { usePermissions } from '../hooks/usePermissions'
+import { apiFetch } from '../lib/api'
 import { MessageCircle, Inbox as InboxIconLucide } from 'lucide-react'
 import {
   getChannelColor,
@@ -34,8 +35,6 @@ const avatarColor = (str) => {
   let h = 0; for (const c of str || '') h = (h * 31 + c.charCodeAt(0)) % colors.length
   return colors[h]
 }
-
-const VITE_API = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
 /* ══════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
@@ -272,13 +271,8 @@ export default function Inbox() {
 
       /* 3. Envia pelo WhatsApp se tiver número */
       if (activeConv?.contact_phone && activeConv?.channel_type === 'whatsapp') {
-        const { data: sessionData } = await supabase.auth.getSession()
-        fetch(`${VITE_API}/send/whatsapp`, {
+        apiFetch(`/workspaces/${ws?.id}/channels/whatsapp/send`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${sessionData?.session?.access_token || ''}`,
-          },
           body: JSON.stringify({
             phone:    activeConv.contact_phone,
             text,

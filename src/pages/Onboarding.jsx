@@ -106,7 +106,7 @@ export default function Onboarding() {
     setSetupLoading(true)
     setSetupError('')
     try {
-      const res = await apiFetch('/workspace/setup', {
+      const res = await apiFetch('/workspaces', {
         method: 'POST',
         body: JSON.stringify({
           companyName: companyName.trim(),

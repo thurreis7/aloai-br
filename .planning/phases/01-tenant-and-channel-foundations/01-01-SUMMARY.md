@@ -20,13 +20,19 @@ updated: 2026-04-24
 - Updated `src/hooks/useAuth.jsx` and `src/hooks/usePermissions.jsx` to consume the stable contract instead of reconstructing inconsistent workspace state.
 - Hardened `src/pages/Settings.jsx` and `src/pages/Team.jsx` so workspace edits and member loading follow workspace-first fallback order instead of assuming one tenant table exists.
 - Added `supabase/migrations/20260424_phase1_workspace_contract_alignment.sql` as an additive compatibility migration for `workspace_members` plus unified `current_workspace_ids()`.
+- Promoted `.planning/design/schema-migration.sql` into `supabase/migrations/20260424_phase1_workspace_foundations.sql` as the additive Phase 1 canonical workspace-first schema migration.
+- Replaced the ad hoc backend entrypoint with a `NestJS + Fastify` shell in `alo-ai-api/` and preserved compatibility endpoints while adding canonical workspace-scoped endpoints for auth bootstrap, workspace provisioning, channels, members, and WhatsApp send.
+- Updated frontend API calls so onboarding, member creation, and WhatsApp send flow through the backend contract rather than raw legacy paths.
+- Added `.planning/design/phase1-infrastructure-runbook.md` covering Supabase migration, Railway backend deploy, `VITE_API_URL`, and the Evolution `DATABASE_URL` requirement on direct Postgres `5432`.
 
 ## Verification
 
 - `npm run build`
 - migration content gate passed for `workspace_members`, `workspace_users`, and `canonical outward vocabulary is workspace`
+- backend TypeScript sources transpiled successfully via `typescript.transpileModule` syntax validation
 
 ## Notes
 
 - The migration keeps the outward contract workspace-first without rewriting the earlier April 19 migration.
 - Team and auth paths now tolerate either membership table being present, which removes a major brownfield blocker for later multichannel work.
+- Full backend dependency install and compiled backend build were blocked by local disk exhaustion during `npm install` in `alo-ai-api/`, so the backend was syntax-validated but not fully built in this environment.

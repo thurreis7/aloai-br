@@ -9,9 +9,15 @@ create table if not exists public.workspace_members (
   role text not null default 'agent',
   display_name text,
   is_online boolean not null default false,
+  company_id uuid null references public.workspaces (id) on delete set null,
+  updated_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   unique (workspace_id, user_id)
 );
+
+alter table public.workspace_members
+  add column if not exists company_id uuid null references public.workspaces (id) on delete set null,
+  add column if not exists updated_at timestamptz not null default now();
 
 insert into public.workspace_members (workspace_id, user_id, role, created_at)
 select wu.workspace_id, wu.user_id, wu.role, wu.created_at
@@ -41,6 +47,13 @@ as $$
     select wm.workspace_id
     from public.workspace_members wm
     where wm.user_id = auth.uid()
+
+    union all
+
+    select coalesce(u.workspace_id, u.company_id)
+    from public.users u
+    where u.id = auth.uid()
+      and coalesce(u.workspace_id, u.company_id) is not null
   ) workspace_memberships
 $$;
 
