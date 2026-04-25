@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, Param, Patch, Post, BadRequestException, ForbiddenException } from '@nestjs/common'
+import { Body, Controller, Get, Headers, Param, Patch, Post, BadRequestException, ForbiddenException } from '@nestjs/common'
 import { AccessService } from '../services/access.service'
 import { ConversationService } from '../services/conversation.service'
 
@@ -86,6 +86,77 @@ export class ConversationController {
     await this.accessService.assertWorkspaceAccess(context, workspaceId)
 
     return this.conversationService.closeConversation({
+      workspaceId,
+      conversationId,
+      userId: context.user.id,
+      role: context.role,
+    })
+  }
+
+  @Post('/:conversationId/handoff/takeover')
+  async takeoverConversation(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('workspaceId') workspaceId: string,
+    @Param('conversationId') conversationId: string,
+  ) {
+    const context = await this.accessService.resolveRequestContext(authorization)
+    await this.accessService.assertWorkspaceAccess(context, workspaceId)
+
+    return this.conversationService.takeoverConversation({
+      workspaceId,
+      conversationId,
+      userId: context.user.id,
+      role: context.role,
+    })
+  }
+
+  @Post('/:conversationId/copilot/reactivate')
+  async reactivateCopilot(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('workspaceId') workspaceId: string,
+    @Param('conversationId') conversationId: string,
+  ) {
+    const context = await this.accessService.resolveRequestContext(authorization)
+    await this.accessService.assertWorkspaceAccess(context, workspaceId)
+
+    return this.conversationService.reactivateCopilot({
+      workspaceId,
+      conversationId,
+      userId: context.user.id,
+      role: context.role,
+    })
+  }
+
+  @Post('/:conversationId/escalate')
+  async escalateConversation(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('workspaceId') workspaceId: string,
+    @Param('conversationId') conversationId: string,
+    @Body() body: { reason?: string; note?: string },
+  ) {
+    const context = await this.accessService.resolveRequestContext(authorization)
+    await this.accessService.assertWorkspaceAccess(context, workspaceId)
+
+    return this.conversationService.escalateConversation({
+      workspaceId,
+      conversationId,
+      userId: context.user.id,
+      role: context.role,
+      reason: body?.reason,
+      note: body?.note,
+    })
+  }
+
+  @Get('/:conversationId/handoff-history')
+  async getHandoffHistory(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('workspaceId') workspaceId: string,
+    @Param('conversationId') conversationId: string,
+  ) {
+    const context = await this.accessService.resolveRequestContext(authorization)
+    await this.accessService.assertWorkspaceAccess(context, workspaceId)
+
+    return this.conversationService.getHandoffHistory({
       workspaceId,
       conversationId,
       userId: context.user.id,

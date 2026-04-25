@@ -32,6 +32,14 @@ function toneForPriority(priority) {
   return 'success'
 }
 
+function isCopilotPaused(aiState) {
+  if (!aiState || typeof aiState !== 'object' || Array.isArray(aiState)) return false
+  const copilot = aiState.copilot
+  if (!copilot || typeof copilot !== 'object' || Array.isArray(copilot)) return false
+  if (copilot.paused === true) return true
+  return String(copilot.mode || '').toLowerCase() === 'paused'
+}
+
 export default function Kanban() {
   const { can } = usePermissions()
   const { ws, loading: authLoading, workspaceReady } = useAuth()
@@ -65,7 +73,7 @@ export default function Kanban() {
         try {
           const { data, error: queryError } = await supabase
             .from('conversations')
-            .select('id, state, status, priority, routing_queue, routing_intent, routing_reason, last_message, last_message_at, contacts(name, company), channels(name, type), leads(status, owner_id, source_channel_id)')
+            .select('id, state, status, priority, routing_queue, routing_intent, routing_reason, ai_state, escalated_at, escalation_reason, escalation_note, last_message, last_message_at, contacts(name, company), channels(name, type), leads(status, owner_id, source_channel_id)')
             .eq('workspace_id', ws.id)
             .order('last_message_at', { ascending: false })
 
@@ -83,6 +91,10 @@ export default function Kanban() {
             routingQueue: item.routing_queue || 'triagem',
             routingIntent: item.routing_intent || 'duvida_geral',
             routingReason: item.routing_reason || '',
+            aiState: item.ai_state || {},
+            escalatedAt: item.escalated_at || null,
+            escalationReason: String(item.escalation_reason || 'none').toLowerCase(),
+            escalationNote: item.escalation_note || '',
             message: item.last_message || 'Sem preview',
             updatedAt: item.last_message_at,
             contactName: item.contacts?.name || 'Contato sem nome',
@@ -244,6 +256,7 @@ export default function Kanban() {
                         <StatusPill tone={toneForPriority(card.priority)}>{card.priority}</StatusPill>
                         <StatusPill tone="default">{card.channel}</StatusPill>
                         <StatusPill tone="info">{card.routingQueue}</StatusPill>
+                        {card.escalationReason !== 'none' ? <StatusPill tone="error">escalonada</StatusPill> : null}
                       </div>
                     </button>
                   ))}
@@ -270,6 +283,10 @@ export default function Kanban() {
                     <StatusPill tone={selected.leadStatus === 'qualified' ? 'success' : selected.leadStatus === 'disqualified' ? 'error' : 'default'}>
                       {selected.leadStatus}
                     </StatusPill>
+                    <StatusPill tone={isCopilotPaused(selected.aiState) ? 'warning' : 'default'}>
+                      {isCopilotPaused(selected.aiState) ? 'copilot pausado' : 'copilot ativo'}
+                    </StatusPill>
+                    {selected.escalationReason !== 'none' ? <StatusPill tone="error">{selected.escalationReason}</StatusPill> : null}
                   </div>
                   <h2 style={{ fontSize: 28, fontFamily: 'var(--font-display)', letterSpacing: '-.04em' }}>{selected.contactName}</h2>
                   <p style={{ color: 'var(--txt3)', marginTop: 8 }}>{selected.company}</p>
@@ -283,6 +300,11 @@ export default function Kanban() {
                   {selected.routingReason ? (
                     <div style={{ marginTop: 12, padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,.08)', background: 'rgba(255,255,255,.03)', color: 'var(--txt2)', lineHeight: 1.6 }}>
                       {selected.routingReason}
+                    </div>
+                  ) : null}
+                  {selected.escalationNote ? (
+                    <div style={{ marginTop: 12, padding: 12, borderRadius: 12, border: '1px solid rgba(248,113,113,.2)', background: 'rgba(248,113,113,.08)', color: 'var(--txt2)', lineHeight: 1.6 }}>
+                      {selected.escalationNote}
                     </div>
                   ) : null}
                 </GlassCard>

@@ -83,8 +83,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01: Build conversation-level handoff state, audit trail, and takeover controls
-- [ ] 05-02: Implement escalation rules and copilot behaviors for supported roles
+- [x] 05-01: Build conversation-level handoff state, audit trail, and takeover controls
+- [x] 05-02: Implement escalation rules and copilot behaviors for supported roles
 
 ### Phase 6: Operations, Security, And Verification
 **Goal**: Make the multichannel workflow safe to run in production by strengthening access control, observability, and repeatable verification.

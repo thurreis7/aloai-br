@@ -138,6 +138,8 @@ export function PermissionsProvider({ children }) {
       convScope,
       canEditAiConfig: isOwner || role === 'owner' || role === 'admin',
       canViewRoutingReason: isOwner || role === 'owner' || role === 'admin' || role === 'supervisor',
+      canViewHandoffHistory: Boolean(user),
+      canManageHandoff: Boolean(user) && can('perm_reply'),
     }}>
       {children}
     </PermissionsContext.Provider>

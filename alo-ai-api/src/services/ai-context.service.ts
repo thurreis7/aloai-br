@@ -265,7 +265,7 @@ export class AiContextService {
     const { data: conversation, error: conversationError } = await this.supabase.admin
       .from('conversations')
       .select(`
-        id, workspace_id, state, status, priority, last_message, last_message_at,
+        id, workspace_id, state, status, priority, ai_state, last_message, last_message_at,
         contacts ( id, name, phone, email, company ),
         channels ( id, type, name )
       `)

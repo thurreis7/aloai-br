@@ -221,7 +221,7 @@ export class RoutingService {
       })
       .eq('workspace_id', input.workspaceId)
       .eq('id', input.conversationId)
-      .select('id, workspace_id, state, status, priority, assigned_to, assigned_by, unread_count, last_message, last_message_at, routing_queue, routing_intent, routing_confidence, routing_reason, routing_source')
+      .select('id, workspace_id, state, status, priority, assigned_to, assigned_by, unread_count, last_message, last_message_at, routing_queue, routing_intent, routing_confidence, routing_reason, routing_source, ai_state, escalated_at, escalated_by, escalation_reason, escalation_note')
       .single()
 
     if (updateError) throw new InternalServerErrorException(updateError.message)
@@ -251,4 +251,3 @@ export class RoutingService {
     }
   }
 }
-

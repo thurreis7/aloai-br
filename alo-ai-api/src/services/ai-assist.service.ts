@@ -17,6 +17,14 @@ function pickTonePrefix(tone: string) {
   return 'Perfeito, vamos resolver isso com voce.'
 }
 
+function isCopilotPaused(aiState: any) {
+  if (!aiState || typeof aiState !== 'object' || Array.isArray(aiState)) return false
+  const copilot = aiState.copilot
+  if (!copilot || typeof copilot !== 'object' || Array.isArray(copilot)) return false
+  if (copilot.paused === true) return true
+  return String(copilot.mode || '').toLowerCase() === 'paused'
+}
+
 @Injectable()
 export class AiAssistService {
   constructor(
@@ -80,6 +88,14 @@ export class AiAssistService {
         reason: 'Conversa encerrada nao recebe nova sugestao.',
         suggestion: '',
         source: 'state',
+      }
+    }
+    if (isCopilotPaused(conversation.ai_state)) {
+      return {
+        available: false,
+        reason: 'Copilot pausado por takeover humano. Reative manualmente para sugerir.',
+        suggestion: '',
+        source: 'handoff',
       }
     }
     if (!latestText) {

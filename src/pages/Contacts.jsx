@@ -13,6 +13,14 @@ function avatarTone(value) {
   return palette[hash]
 }
 
+function isCopilotPaused(aiState) {
+  if (!aiState || typeof aiState !== 'object' || Array.isArray(aiState)) return false
+  const copilot = aiState.copilot
+  if (!copilot || typeof copilot !== 'object' || Array.isArray(copilot)) return false
+  if (copilot.paused === true) return true
+  return String(copilot.mode || '').toLowerCase() === 'paused'
+}
+
 export default function Contacts() {
   const { ws, loading: authLoading, workspaceReady } = useAuth()
   const { canViewRoutingReason } = usePermissions()
@@ -53,7 +61,7 @@ export default function Contacts() {
             .order('created_at', { ascending: false }),
           supabase
             .from('conversations')
-            .select('id, contact_id, status, state, priority, routing_queue, routing_intent, routing_reason, assigned_to, channel_id, last_message, last_message_at, channels(type, name)')
+            .select('id, contact_id, status, state, priority, routing_queue, routing_intent, routing_reason, assigned_to, channel_id, ai_state, escalated_at, escalation_reason, escalation_note, last_message, last_message_at, channels(type, name)')
             .eq('workspace_id', ws.id)
             .order('last_message_at', { ascending: false }),
           supabase
@@ -92,6 +100,10 @@ export default function Contacts() {
             latestQueue: latest?.routing_queue || 'triagem',
             latestIntent: latest?.routing_intent || 'duvida_geral',
             latestReason: latest?.routing_reason || '',
+            latestAiState: latest?.ai_state || {},
+            latestEscalatedAt: latest?.escalated_at || null,
+            latestEscalationReason: String(latest?.escalation_reason || 'none').toLowerCase(),
+            latestEscalationNote: latest?.escalation_note || '',
             latestConversationId: latest?.id || null,
             latestAt: latest?.last_message_at || contact.created_at,
             totalConversations: history.length,
@@ -360,6 +372,12 @@ export default function Contacts() {
                 <StatusPill tone={selected.leadStatus === 'qualified' ? 'success' : selected.leadStatus === 'disqualified' ? 'error' : 'default'}>
                   {selected.leadStatus}
                 </StatusPill>
+                <StatusPill tone={isCopilotPaused(selected.latestAiState) ? 'warning' : 'default'}>
+                  {isCopilotPaused(selected.latestAiState) ? 'copilot pausado' : 'copilot ativo'}
+                </StatusPill>
+                {selected.latestEscalationReason !== 'none' ? (
+                  <StatusPill tone="error">{selected.latestEscalationReason}</StatusPill>
+                ) : null}
                 <StatusPill tone="default">{selected.totalConversations} conversas</StatusPill>
               </div>
 
@@ -371,6 +389,8 @@ export default function Contacts() {
                   <InfoRow label="Fila" value={selected.latestQueue || 'triagem'} />
                   <InfoRow label="Intencao" value={selected.latestIntent || 'duvida_geral'} />
                   <InfoRow label="Lead status" value={selected.leadStatus || 'open'} />
+                  <InfoRow label="Escalonamento" value={selected.latestEscalationReason || 'none'} />
+                  {selected.latestEscalationNote ? <InfoRow label="Nota do escalonamento" value={selected.latestEscalationNote} /> : null}
                 </div>
               </GlassCard>
 

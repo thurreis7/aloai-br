@@ -48,6 +48,14 @@ const ROUTING_INTENT_LABELS = {
   duvida_geral: 'Intencao geral',
   spam: 'Intencao spam',
 }
+const ESCALATION_REASON_LABELS = {
+  none: 'Sem escalonamento',
+  sensitive: 'Sensivel',
+  unresolved: 'Nao resolvida',
+  high_value: 'Alto valor',
+  out_of_hours: 'Fora do horario',
+  other: 'Outro',
+}
 
 const normalizeConversationState = (state, status) => {
   const candidate = String(state || status || 'new').trim().toLowerCase()
@@ -68,6 +76,18 @@ const normalizeRoutingIntent = (value) => {
   return ROUTING_INTENT_LABELS[key] ? key : 'duvida_geral'
 }
 
+const normalizeAiState = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value
+}
+
+const isCopilotPaused = (value) => {
+  const aiState = normalizeAiState(value)
+  const copilot = normalizeAiState(aiState.copilot)
+  if (copilot.paused === true) return true
+  return String(copilot.mode || '').toLowerCase() === 'paused'
+}
+
 const initials = (name) => (name || '?').split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
 
 const avatarColor = (str) => {
@@ -84,7 +104,7 @@ function ChannelGlyph({ type, size = 14 }) {
 
 export default function Inbox() {
   const { user, ws, workspaceReady, loading: authLoading } = useAuth()
-  const { can, convScope, canViewRoutingReason } = usePermissions()
+  const { can, convScope, canViewRoutingReason, canViewHandoffHistory, canManageHandoff } = usePermissions()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [convs, setConvs] = useState([])
@@ -102,6 +122,12 @@ export default function Inbox() {
   const [routingLoading, setRoutingLoading] = useState(false)
   const [routingError, setRoutingError] = useState('')
   const [routingPreview, setRoutingPreview] = useState(null)
+  const [handoffLoading, setHandoffLoading] = useState(false)
+  const [handoffError, setHandoffError] = useState('')
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [handoffHistory, setHandoffHistory] = useState([])
+  const [escalationReason, setEscalationReason] = useState('sensitive')
+  const [escalationNote, setEscalationNote] = useState('')
   const [showPanel, setShowPanel] = useState(true)
 
   const msgsEndRef = useRef(null)
@@ -126,6 +152,11 @@ export default function Inbox() {
   const routingReasonToShow = canViewRoutingReason
     ? (routingView?.reasoning || activeConv?.routing_reason || '')
     : ''
+  const activeAiState = normalizeAiState(activeConv?.ai_state)
+  const copilotPaused = isCopilotPaused(activeAiState)
+  const handoffMode = String(activeAiState?.handoff?.mode || '').toLowerCase() || (activeConv?.state === 'ai_handling' ? 'ai' : 'human')
+  const escalationReasonToShow = String(activeConv?.escalation_reason || 'none').toLowerCase()
+  const canTriggerHandoff = canManageHandoff && activeConv?.state !== 'closed'
 
   const loadConvs = useCallback(async () => {
     if (authLoading || !workspaceReady || !user) {
@@ -148,6 +179,7 @@ export default function Inbox() {
           id, state, status, priority, unread_count,
           last_message, last_message_at, created_at, assigned_to,
           routing_queue, routing_intent, routing_confidence, routing_reason, routing_source,
+          ai_state, escalated_at, escalated_by, escalation_reason, escalation_note,
           contacts ( id, name, phone, company, email ),
           channels  ( id, type, name )
         `)
@@ -243,6 +275,11 @@ export default function Inbox() {
     setAiReason('')
     setRoutingError('')
     setRoutingPreview(null)
+    setHandoffError('')
+    setHandoffHistory([])
+    setEscalationReason('sensitive')
+    setEscalationNote('')
+    loadHandoffHistory(activeId)
     setTimeout(() => inputRef.current?.focus(), 100)
   }, [activeId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -348,6 +385,82 @@ export default function Inbox() {
     }
   }
 
+  const loadHandoffHistory = async (convId) => {
+    if (!convId || !ws?.id || !canViewHandoffHistory) {
+      setHandoffHistory([])
+      return
+    }
+    setHistoryLoading(true)
+    setHandoffError('')
+    try {
+      const payload = await apiJson(`/workspaces/${ws.id}/conversations/${convId}/handoff-history`)
+      setHandoffHistory(Array.isArray(payload?.events) ? payload.events : [])
+    } catch (error) {
+      setHandoffError(error.message || 'Nao foi possivel carregar historico de handoff.')
+      setHandoffHistory([])
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  const takeoverConversation = async () => {
+    if (!activeId || !ws?.id || !canTriggerHandoff) return
+    setHandoffLoading(true)
+    setHandoffError('')
+    try {
+      const payload = await apiJson(`/workspaces/${ws.id}/conversations/${activeId}/handoff/takeover`, { method: 'POST' })
+      if (payload?.conversation) {
+        setConvs((prev) => prev.map((c) => (c.id === activeId ? { ...c, ...mapConvPartial(payload.conversation) } : c)))
+      }
+      await loadHandoffHistory(activeId)
+    } catch (error) {
+      setHandoffError(error.message || 'Nao foi possivel assumir a conversa.')
+    } finally {
+      setHandoffLoading(false)
+    }
+  }
+
+  const reactivateCopilot = async () => {
+    if (!activeId || !ws?.id || !canTriggerHandoff) return
+    setHandoffLoading(true)
+    setHandoffError('')
+    try {
+      const payload = await apiJson(`/workspaces/${ws.id}/conversations/${activeId}/copilot/reactivate`, { method: 'POST' })
+      if (payload?.conversation) {
+        setConvs((prev) => prev.map((c) => (c.id === activeId ? { ...c, ...mapConvPartial(payload.conversation) } : c)))
+      }
+      await loadHandoffHistory(activeId)
+    } catch (error) {
+      setHandoffError(error.message || 'Nao foi possivel reativar o copilot.')
+    } finally {
+      setHandoffLoading(false)
+    }
+  }
+
+  const escalateConversation = async () => {
+    if (!activeId || !ws?.id || !canTriggerHandoff) return
+    setHandoffLoading(true)
+    setHandoffError('')
+    try {
+      const payload = await apiJson(`/workspaces/${ws.id}/conversations/${activeId}/escalate`, {
+        method: 'POST',
+        body: JSON.stringify({
+          reason: escalationReason,
+          note: escalationNote,
+        }),
+      })
+      if (payload?.conversation) {
+        setConvs((prev) => prev.map((c) => (c.id === activeId ? { ...c, ...mapConvPartial(payload.conversation) } : c)))
+      }
+      setEscalationNote('')
+      await loadHandoffHistory(activeId)
+    } catch (error) {
+      setHandoffError(error.message || 'Nao foi possivel escalonar a conversa.')
+    } finally {
+      setHandoffLoading(false)
+    }
+  }
+
   const closeConv = async () => {
     if (!activeId || !can('perm_close')) return
     try {
@@ -378,6 +491,11 @@ export default function Inbox() {
       routing_confidence: Number(c.routing_confidence || 0.6),
       routing_reason: canViewRoutingReason ? (c.routing_reason || '') : '',
       routing_source: c.routing_source || 'fallback',
+      ai_state: normalizeAiState(c.ai_state),
+      escalated_at: c.escalated_at || null,
+      escalated_by: c.escalated_by || null,
+      escalation_reason: String(c.escalation_reason || 'none').toLowerCase(),
+      escalation_note: c.escalation_note || '',
       contact_id: c.contacts?.id,
       contact_name: c.contacts?.name || c.contacts?.phone || 'Desconhecido',
       contact_phone: c.contacts?.phone,
@@ -402,6 +520,11 @@ export default function Inbox() {
     routing_confidence: Number(c.routing_confidence || 0.6),
     routing_reason: canViewRoutingReason ? (c.routing_reason || '') : '',
     routing_source: c.routing_source || 'fallback',
+    ai_state: normalizeAiState(c.ai_state),
+    escalated_at: c.escalated_at || null,
+    escalated_by: c.escalated_by || null,
+    escalation_reason: String(c.escalation_reason || 'none').toLowerCase(),
+    escalation_note: c.escalation_note || '',
   })
 
   const mapMsg = (m) => ({
@@ -500,6 +623,11 @@ export default function Inbox() {
                   <span style={{ ...s.queueTag, color: '#38bdf8', background: 'rgba(56,189,248,.16)' }}>
                     {ROUTING_QUEUE_LABELS[c.routing_queue]}
                   </span>
+                  {c.escalation_reason && c.escalation_reason !== 'none' ? (
+                    <span style={{ ...s.queueTag, color: '#fca5a5', background: 'rgba(248,113,113,.18)' }}>
+                      Escalonada
+                    </span>
+                  ) : null}
                 </div>
               </div>
 
@@ -748,6 +876,90 @@ export default function Inbox() {
 
           <div style={s.panelDivider} />
 
+          <div style={s.panelSection}>
+            <div style={s.panelSectionTitle}>Handoff e copilot</div>
+            <div style={s.panelRow}>
+              <span style={s.panelKey}>Modo</span>
+              <span style={s.panelVal}>{handoffMode === 'ai' ? 'IA em foco' : 'Humano em foco'}</span>
+            </div>
+            <div style={s.panelRow}>
+              <span style={s.panelKey}>Copilot</span>
+              <span style={s.panelVal}>{copilotPaused ? 'Pausado' : 'Ativo'}</span>
+            </div>
+            <div style={s.panelRow}>
+              <span style={s.panelKey}>Escalonamento</span>
+              <span style={s.panelVal}>{ESCALATION_REASON_LABELS[escalationReasonToShow] || ESCALATION_REASON_LABELS.none}</span>
+            </div>
+            {activeConv.escalation_note ? (
+              <div style={s.routingReason}>
+                {activeConv.escalation_note}
+              </div>
+            ) : null}
+            {canTriggerHandoff ? (
+              <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                {activeConv.state !== 'human_handling' ? (
+                  <button
+                    style={{ ...s.panelActionBtn, ...s.panelActionBtnWarn }}
+                    onClick={takeoverConversation}
+                    disabled={handoffLoading}
+                  >
+                    {handoffLoading ? 'Processando...' : 'Assumir atendimento'}
+                  </button>
+                ) : null}
+                <button
+                  style={{ ...s.panelActionBtn, ...s.panelActionBtnPrimary }}
+                  onClick={reactivateCopilot}
+                  disabled={handoffLoading || !copilotPaused}
+                >
+                  {handoffLoading ? 'Processando...' : 'Reativar copilot'}
+                </button>
+                <select
+                  style={s.panelSelect}
+                  value={escalationReason}
+                  onChange={(event) => setEscalationReason(event.target.value)}
+                  disabled={handoffLoading}
+                >
+                  <option value="sensitive">Sensivel</option>
+                  <option value="unresolved">Nao resolvida</option>
+                  <option value="high_value">Alto valor</option>
+                  <option value="out_of_hours">Fora do horario</option>
+                  <option value="other">Outro</option>
+                </select>
+                <textarea
+                  style={s.panelTextarea}
+                  placeholder="Nota opcional de escalonamento"
+                  value={escalationNote}
+                  onChange={(event) => setEscalationNote(event.target.value)}
+                  rows={2}
+                  disabled={handoffLoading}
+                />
+                <button
+                  style={{ ...s.panelActionBtn, ...s.panelActionBtnDanger }}
+                  onClick={escalateConversation}
+                  disabled={handoffLoading}
+                >
+                  {handoffLoading ? 'Processando...' : 'Escalonar manualmente'}
+                </button>
+              </div>
+            ) : null}
+            {historyLoading ? (
+              <div style={s.historyHint}>Carregando historico...</div>
+            ) : null}
+            {!historyLoading && handoffHistory.length > 0 ? (
+              <div style={s.historyList}>
+                {handoffHistory.slice(0, 6).map((event) => (
+                  <div key={event.id} style={s.historyItem}>
+                    <div style={{ fontSize: 10.5, fontWeight: 600 }}>{String(event.action || '').replace('conversation_', '')}</div>
+                    <div style={{ fontSize: 10, color: 'var(--txt3)' }}>{fmtTime(event.created_at)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {handoffError ? <div style={s.routingError}>{handoffError}</div> : null}
+          </div>
+
+          <div style={s.panelDivider} />
+
           <div style={s.panelGrid}>
             {[
               { v: convMsgs.length, l: 'Mensagens' },
@@ -942,6 +1154,55 @@ const s = {
     border: '1px solid rgba(56,189,248,.4)',
     background: 'rgba(56,189,248,.14)',
     color: '#7dd3fc',
+  },
+  panelActionBtnWarn: {
+    border: '1px solid rgba(250,204,21,.45)',
+    background: 'rgba(250,204,21,.14)',
+    color: '#fde68a',
+  },
+  panelActionBtnDanger: {
+    border: '1px solid rgba(248,113,113,.45)',
+    background: 'rgba(248,113,113,.14)',
+    color: '#fecaca',
+  },
+  panelSelect: {
+    border: '1px solid rgba(255,255,255,.08)',
+    background: 'rgba(255,255,255,.04)',
+    color: 'var(--txt2)',
+    borderRadius: 8,
+    padding: '7px 9px',
+    fontSize: 11,
+    fontWeight: 600,
+    fontFamily: 'inherit',
+  },
+  panelTextarea: {
+    border: '1px solid rgba(255,255,255,.08)',
+    background: 'rgba(255,255,255,.04)',
+    color: 'var(--txt2)',
+    borderRadius: 8,
+    padding: '7px 9px',
+    fontSize: 11,
+    fontFamily: 'inherit',
+    resize: 'vertical',
+  },
+  historyHint: {
+    marginTop: 8,
+    fontSize: 10.5,
+    color: 'var(--txt3)',
+  },
+  historyList: {
+    marginTop: 8,
+    display: 'grid',
+    gap: 6,
+  },
+  historyItem: {
+    border: '1px solid rgba(255,255,255,.08)',
+    background: 'rgba(255,255,255,.03)',
+    borderRadius: 8,
+    padding: '7px 8px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   routingReason: {
     marginTop: 8,
