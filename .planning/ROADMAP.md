@@ -13,6 +13,7 @@ This brownfield roadmap turns the current product from a promising multichannel 
 - [ ] **Phase 5: Human Handoff And Copilot Controls** - Make AI escalation, agent takeover, and supervised collaboration explicit and safe.
 - [ ] **Phase 6: Operations, Security, And Verification** - Harden multitenancy, observability, and regression protection for production readiness.
 - [ ] **Phase 7: Promise Parity And Launch Readiness** - Close remaining gaps between landing-page messaging and the actual shipped platform experience.
+- [ ] **Phase 8: WhatsApp Production Recovery** - Resolve the CHAN-01 production blocker and validate WhatsApp messaging end-to-end on Render.
 
 ## Phase Details
 
@@ -114,10 +115,29 @@ Plans:
 - [ ] 07-01: Audit product behavior against the landing-page promise and close parity gaps
 - [ ] 07-02: Finalize release readiness, documentation, and go-live checklist for the milestone
 
+## v1.1
+
+### Phase 8: WhatsApp Production Recovery
+**Goal**: Restore production WhatsApp connectivity by resolving the CHAN-01 blocker, rotating credentials, and validating inbound and outbound messaging end-to-end on Render.
+**Depends on**: Phase 7
+**Requirements**: [CHAN-01]
+**Success Criteria** (what must be TRUE):
+  1. Evolution API production image no longer overrides Render-provided environment variables with an internal `.env`.
+  2. `AUTHENTICATION_API_KEY` is rotated and production services use the new value consistently.
+  3. Render production webhook is updated to `https://aloai-br-1i7u.onrender.com/webhook/whatsapp`.
+  4. Inbound and outbound WhatsApp flows are validated end-to-end on Render.
+**Plans**: 0 plans
+
+Scope:
+- Fork Evolution API image to remove the internal `.env` override.
+- Rotate `AUTHENTICATION_API_KEY`.
+- Validate inbound and outbound WhatsApp end-to-end on Render.
+- Update webhook to `https://aloai-br-1i7u.onrender.com/webhook/whatsapp`.
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -128,3 +148,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 5. Human Handoff And Copilot Controls | 0/2 | Not started | - |
 | 6. Operations, Security, And Verification | 0/2 | Not started | - |
 | 7. Promise Parity And Launch Readiness | 0/2 | Not started | - |
+| 8. WhatsApp Production Recovery | 0/0 | Ready to discuss | - |

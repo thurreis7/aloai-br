@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
+milestone: v1.1
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 7 execution complete; guided UAT pending
-last_updated: "2026-05-04T03:36:00.000Z"
-last_activity: 2026-05-04 -- Phase 07 execution complete; guided UAT pending
+status: Ready to discuss
+stopped_at: Phase 8 ready to discuss
+last_updated: "2026-05-04T00:00:00.000Z"
+last_activity: 2026-05-04 -- Phase 08 ready to discuss
 progress:
-  total_phases: 7
-  completed_phases: 6
+  total_phases: 8
+  completed_phases: 7
   total_plans: 14
   completed_plans: 14
-  percent: 100
+  percent: 88
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-24)
 
 **Core value:** Every inbound conversation should enter one unified, AI-assisted CRM workflow that helps the right team act faster without losing brand context or human control.
-**Current focus:** Phase 07 — promise-parity-and-launch-readiness
+**Current focus:** Phase 08 - whatsapp-production-recovery
 
 ## Current Position
 
-Phase: 07 (promise-parity-and-launch-readiness) — READY FOR GUIDED UAT
-Plan: 2 of 2
-Status: Phase 07 execution complete; UAT pending
-Last activity: 2026-05-04 -- Phase 07 execution complete; guided UAT pending
+Phase: 08 (whatsapp-production-recovery) - READY TO DISCUSS
+Plan: 0 of 0
+Status: Ready to discuss
+Last activity: 2026-05-04 -- Phase 08 ready to discuss
 
-Progress: [##########] 100%
+Progress: [#########-] 88%
 
 ## Performance Metrics
 
@@ -72,6 +72,7 @@ None yet.
 
 - Phase 4 should preserve the workspace-scoped AI context contract instead of bypassing it with route-local heuristics.
 - Routing and qualification must continue to respect workspace isolation and role boundaries established in phases 1 through 3.
+- Phase 8 must resolve CHAN-01 by removing the Evolution API internal `.env` override, rotating `AUTHENTICATION_API_KEY`, updating the WhatsApp webhook to `https://aloai-br-1i7u.onrender.com/webhook/whatsapp`, and validating inbound/outbound WhatsApp on Render.
 
 ## Deferred Items
 
@@ -85,5 +86,5 @@ Last session: 2026-05-04T02:46:45.509Z
 Stopped at: Phase 7 context gathered
 Resume file: .planning/phases/07-promise-parity-and-launch-readiness/07-CONTEXT.md
 
-**Planned Phase:** 7 (pending) - awaiting next plan cycle
-**Executed Phase:** 6 (Operations, Security, And Verification) - plans 06-01 and 06-02 completed - 2026-04-25
+**Planned Phase:** 8 (pending) - ready to discuss
+**Executed Phase:** 7 (Promise Parity And Launch Readiness) - execution complete; guided UAT pending - 2026-05-04
