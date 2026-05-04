@@ -126,13 +126,17 @@ Plans:
   2. `AUTHENTICATION_API_KEY` is rotated and production services use the new value consistently.
   3. Render production webhook is updated to `https://aloai-br-1i7u.onrender.com/webhook/whatsapp`.
   4. Inbound and outbound WhatsApp flows are validated end-to-end on Render.
-**Plans**: 0 plans
+**Plans**: 2 plans
 
 Scope:
 - Fork Evolution API image to remove the internal `.env` override.
 - Rotate `AUTHENTICATION_API_KEY`.
 - Validate inbound and outbound WhatsApp end-to-end on Render.
 - Update webhook to `https://aloai-br-1i7u.onrender.com/webhook/whatsapp`.
+
+Plans:
+- [ ] 08-01: Fork and deploy Evolution with Render-authoritative env vars and rotated credentials
+- [ ] 08-02: Validate backend webhook routing and production WhatsApp inbound/outbound evidence
 
 ## Progress
 
@@ -148,4 +152,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 5. Human Handoff And Copilot Controls | 0/2 | Not started | - |
 | 6. Operations, Security, And Verification | 0/2 | Not started | - |
 | 7. Promise Parity And Launch Readiness | 0/2 | Not started | - |
-| 8. WhatsApp Production Recovery | 0/0 | Ready to discuss | - |
+| 8. WhatsApp Production Recovery | 0/2 | Ready to execute | - |
