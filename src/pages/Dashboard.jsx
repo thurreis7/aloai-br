@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Area,
   AreaChart,
@@ -16,6 +16,11 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { usePermissions } from '../hooks/usePermissions'
 import { getChannelColor, getChannelLabel, normalizeChannelType } from '../lib/channels'
+import {
+  REALTIME_EVENTS,
+  envelopeFromPostgresChange,
+  shouldHandleRealtimeEnvelope,
+} from '../lib/realtimeEvents'
 import {
   CardHeader,
   EmptyState,
@@ -62,10 +67,7 @@ export default function Dashboard() {
   const [error, setError] = useState('')
   const [stats, setStats] = useState(null)
 
-  useEffect(() => {
-    let ignore = false
-
-    async function loadDashboard() {
+  const loadDashboard = useCallback(async ({ silent = false } = {}) => {
       if (authLoading || !workspaceReady) {
         setLoading(true)
         return
@@ -77,7 +79,7 @@ export default function Dashboard() {
         return
       }
 
-      setLoading(true)
+      if (!silent) setLoading(true)
       setError('')
       try {
         const since = new Date()
@@ -297,8 +299,7 @@ export default function Dashboard() {
           })
         }
 
-        if (!ignore) {
-          setStats({
+        setStats({
             metrics,
             dayBuckets,
             timeline,
@@ -318,17 +319,41 @@ export default function Dashboard() {
               aiPausedConversations,
             },
           })
-        }
       } catch (err) {
-        if (!ignore) setError(err.message || 'Nao foi possivel carregar o dashboard.')
+        setError(err.message || 'Nao foi possivel carregar o dashboard.')
       } finally {
-        if (!ignore) setLoading(false)
+        setLoading(false)
+      }
+    }, [ws, workspaceReady, authLoading, canViewOpsMetrics])
+
+  useEffect(() => {
+    loadDashboard()
+  }, [loadDashboard])
+
+  useEffect(() => {
+    if (!ws?.id) return undefined
+
+    const handleDashboardChange = (payload) => {
+      const envelope = envelopeFromPostgresChange(payload, { workspaceId: ws.id })
+      if (shouldHandleRealtimeEnvelope(envelope, ws.id, Object.values(REALTIME_EVENTS))) {
+        loadDashboard({ silent: true })
       }
     }
 
-    loadDashboard()
-    return () => { ignore = true }
-  }, [ws, workspaceReady, authLoading, canViewOpsMetrics])
+    const channel = supabase
+      .channel('dashboard-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversations' }, handleDashboardChange)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'conversations' }, handleDashboardChange)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, handleDashboardChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_members' }, handleDashboardChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_users' }, handleDashboardChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, handleDashboardChange)
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [ws?.id, loadDashboard])
 
   const topChannel = useMemo(() => stats?.channelVolume?.[0], [stats])
 

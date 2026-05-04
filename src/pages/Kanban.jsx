@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GripVertical } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { usePermissions } from '../hooks/usePermissions'
 import { useAuth } from '../hooks/useAuth'
 import { apiFetch } from '../lib/api'
+import {
+  REALTIME_EVENTS,
+  envelopeFromPostgresChange,
+  shouldHandleRealtimeEnvelope,
+} from '../lib/realtimeEvents'
 import { EmptyState, GlassCard, PageHeader, PageShell, SkeletonBlock, StatusPill } from '../components/app/WorkspaceUI'
 
 const STATE_COLUMNS = [
@@ -55,69 +60,90 @@ export default function Kanban() {
   const [selectedId, setSelectedId] = useState(null)
   const boardRef = useRef(null)
 
+  const loadBoard = useCallback(async ({ silent = false } = {}) => {
+    if (authLoading || !workspaceReady) {
+      setLoading(true)
+      setError('')
+      return
+    }
+
+    if (!ws) {
+      setCards([])
+      setLoading(false)
+      setError('')
+      return
+    }
+
+    if (!silent) setLoading(true)
+    setError('')
+    try {
+      const { data, error: queryError } = await supabase
+        .from('conversations')
+        .select('id, state, status, priority, routing_queue, routing_intent, routing_reason, assigned_to, ai_state, escalated_at, escalation_reason, escalation_note, last_message, last_message_at, contacts(name, company), channels(name, type), leads(status, owner_id, source_channel_id)')
+        .eq('workspace_id', ws.id)
+        .order('last_message_at', { ascending: false })
+
+      if (queryError) throw queryError
+
+      setCards((data || []).map((item) => ({
+        ...(() => {
+          const lead = Array.isArray(item.leads) ? item.leads[0] : item.leads
+          return { leadStatus: lead?.status || 'open' }
+        })(),
+        id: item.id,
+        state: normalizeConversationState(item.state, item.status),
+        priority: item.priority || 'medium',
+        routingQueue: item.routing_queue || 'triagem',
+        routingIntent: item.routing_intent || 'duvida_geral',
+        routingReason: item.routing_reason || '',
+        assignedTo: item.assigned_to || null,
+        aiState: item.ai_state || {},
+        escalatedAt: item.escalated_at || null,
+        escalationReason: String(item.escalation_reason || 'none').toLowerCase(),
+        escalationNote: item.escalation_note || '',
+        message: item.last_message || 'Sem preview',
+        updatedAt: item.last_message_at,
+        contactName: item.contacts?.name || 'Contato sem nome',
+        company: item.contacts?.company || 'Empresa nao informada',
+        channel: item.channels?.name || item.channels?.type || 'Canal',
+      })))
+      setSelectedId((current) => current || data?.[0]?.id || null)
+    } catch (err) {
+      setError(err.message || 'Nao foi possivel carregar o kanban.')
+    } finally {
+      setLoading(false)
+    }
+  }, [ws, authLoading, workspaceReady])
+
   useEffect(() => {
-    let ignore = false
+    loadBoard()
+  }, [loadBoard])
 
-    async function loadBoard() {
-      if (authLoading || !workspaceReady) {
-        setLoading(true)
-        setError('')
-        return
-      }
+  useEffect(() => {
+    if (!ws?.id) return undefined
 
-      if (!ws) {
-        setCards([])
-        setLoading(false)
-        setError('')
-        return
-      }
-
-        setLoading(true)
-        setError('')
-        try {
-          const { data, error: queryError } = await supabase
-            .from('conversations')
-            .select('id, state, status, priority, routing_queue, routing_intent, routing_reason, assigned_to, ai_state, escalated_at, escalation_reason, escalation_note, last_message, last_message_at, contacts(name, company), channels(name, type), leads(status, owner_id, source_channel_id)')
-            .eq('workspace_id', ws.id)
-            .order('last_message_at', { ascending: false })
-
-        if (queryError) throw queryError
-
-        if (!ignore) {
-          setCards((data || []).map((item) => ({
-            ...(() => {
-              const lead = Array.isArray(item.leads) ? item.leads[0] : item.leads
-              return { leadStatus: lead?.status || 'open' }
-            })(),
-            id: item.id,
-            state: normalizeConversationState(item.state, item.status),
-            priority: item.priority || 'medium',
-            routingQueue: item.routing_queue || 'triagem',
-            routingIntent: item.routing_intent || 'duvida_geral',
-            routingReason: item.routing_reason || '',
-            assignedTo: item.assigned_to || null,
-            aiState: item.ai_state || {},
-            escalatedAt: item.escalated_at || null,
-            escalationReason: String(item.escalation_reason || 'none').toLowerCase(),
-            escalationNote: item.escalation_note || '',
-            message: item.last_message || 'Sem preview',
-            updatedAt: item.last_message_at,
-            contactName: item.contacts?.name || 'Contato sem nome',
-            company: item.contacts?.company || 'Empresa nao informada',
-            channel: item.channels?.name || item.channels?.type || 'Canal',
-          })))
-          setSelectedId((current) => current || data?.[0]?.id || null)
-        }
-      } catch (err) {
-        if (!ignore) setError(err.message || 'Nao foi possivel carregar o kanban.')
-      } finally {
-        if (!ignore) setLoading(false)
+    const handleBoardChange = (payload) => {
+      const envelope = envelopeFromPostgresChange(payload, { workspaceId: ws.id })
+      if (shouldHandleRealtimeEnvelope(envelope, ws.id, [
+        REALTIME_EVENTS.CONVERSATION_CREATED,
+        REALTIME_EVENTS.CONVERSATION_UPDATED,
+        REALTIME_EVENTS.ASSIGNMENT_UPDATED,
+        REALTIME_EVENTS.KANBAN_UPDATED,
+      ])) {
+        loadBoard({ silent: true })
       }
     }
 
-    loadBoard()
-    return () => { ignore = true }
-  }, [ws, authLoading, workspaceReady])
+    const channel = supabase
+      .channel('kanban-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversations' }, handleBoardChange)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'conversations' }, handleBoardChange)
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [ws?.id, loadBoard])
 
   const grouped = useMemo(() => {
     return STATE_COLUMNS.map((column) => ({

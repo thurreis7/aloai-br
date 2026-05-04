@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import {
+  REALTIME_EVENTS,
+  envelopeFromPostgresChange,
+  isWorkspaceEnvelope,
+  validateRealtimeEnvelope,
+} from '../lib/realtimeEvents'
 
 const MAX = 12
 
@@ -39,6 +45,14 @@ export function useInboxNotifications(user) {
 
   useEffect(() => {
     if (!user?.id) return
+    const workspaceId = user.workspace_id || user.company_id || user.active_workspace_id || null
+
+    const shouldUseEnvelope = (payload, event) => {
+      const envelope = envelopeFromPostgresChange(payload, { workspaceId })
+      if (envelope?.event !== event) return false
+      if (!validateRealtimeEnvelope(envelope).valid) return false
+      return !workspaceId || isWorkspaceEnvelope(envelope, workspaceId)
+    }
 
     const channel = supabase
       .channel('alo-ai-live-activity')
@@ -46,6 +60,7 @@ export function useInboxNotifications(user) {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
         async (payload) => {
+          if (!shouldUseEnvelope(payload, REALTIME_EVENTS.MESSAGE_CREATED)) return
           const message = payload.new
           if (!message?.conversation_id) return
           if (message.sender_type !== 'client') return
@@ -81,6 +96,12 @@ export function useInboxNotifications(user) {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'conversations' },
         (payload) => {
+          const allowed = [
+            REALTIME_EVENTS.CONVERSATION_UPDATED,
+            REALTIME_EVENTS.ASSIGNMENT_UPDATED,
+            REALTIME_EVENTS.KANBAN_UPDATED,
+          ]
+          if (!allowed.some((event) => shouldUseEnvelope(payload, event))) return
           const row = payload.new
           const old = payload.old
           if (!row?.id) return

@@ -6,6 +6,11 @@ import { usePermissions } from '../hooks/usePermissions'
 import { apiFetch, apiJson } from '../lib/api'
 import { MessageCircle, Inbox as InboxIconLucide } from 'lucide-react'
 import {
+  REALTIME_EVENTS,
+  envelopeFromPostgresChange,
+  shouldHandleRealtimeEnvelope,
+} from '../lib/realtimeEvents'
+import {
   getChannelColor,
   getChannelDisplayName,
   getChannelIcon,
@@ -126,6 +131,7 @@ export default function Inbox() {
   const [handoffError, setHandoffError] = useState('')
   const [historyLoading, setHistoryLoading] = useState(false)
   const [handoffHistory, setHandoffHistory] = useState([])
+  const [presenceMembers, setPresenceMembers] = useState([])
   const [escalationReason, setEscalationReason] = useState('sensitive')
   const [escalationNote, setEscalationNote] = useState('')
   const [showPanel, setShowPanel] = useState(true)
@@ -157,6 +163,8 @@ export default function Inbox() {
   const handoffMode = String(activeAiState?.handoff?.mode || '').toLowerCase() || (activeConv?.state === 'ai_handling' ? 'ai' : 'human')
   const escalationReasonToShow = String(activeConv?.escalation_reason || 'none').toLowerCase()
   const canTriggerHandoff = canManageHandoff && activeConv?.state !== 'closed'
+  const activeAssignee = presenceMembers.find((member) => member.user_id === activeConv?.assigned_to || member.id === activeConv?.assigned_to) || null
+  const onlineAgents = presenceMembers.filter((member) => member.is_online).length
 
   const loadConvs = useCallback(async () => {
     if (authLoading || !workspaceReady || !user) {
@@ -222,13 +230,59 @@ export default function Inbox() {
     }
   }, [msgs])
 
+  const loadPresence = useCallback(async () => {
+    if (authLoading || !workspaceReady || !ws?.id) {
+      setPresenceMembers([])
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('workspace_members')
+        .select('id, user_id, display_name, role, is_online')
+        .eq('workspace_id', ws.id)
+
+      if (!error && (data || []).length) {
+        setPresenceMembers((data || []).map((member) => ({
+          id: member.id,
+          user_id: member.user_id,
+          name: member.display_name || 'Agente',
+          role: member.role || 'agent',
+          is_online: Boolean(member.is_online),
+        })))
+        return
+      }
+
+      const { data: usersData } = await supabase
+        .from('users')
+        .select('id, name, role, is_online')
+        .eq('company_id', ws.id)
+
+      setPresenceMembers((usersData || []).map((member) => ({
+        id: member.id,
+        user_id: member.id,
+        name: member.name || 'Agente',
+        role: member.role || 'agent',
+        is_online: Boolean(member.is_online),
+      })))
+    } catch {
+      setPresenceMembers([])
+    }
+  }, [ws?.id, workspaceReady, authLoading])
+
   useEffect(() => {
-    if (!user) return
+    if (!user || !ws?.id) return
+
+    const handleEnvelope = (payload, events, handler) => {
+      const envelope = envelopeFromPostgresChange(payload, { workspaceId: ws.id })
+      if (!shouldHandleRealtimeEnvelope(envelope, ws.id, events)) return
+      handler(envelope.payload.new, envelope)
+    }
 
     realtimeSub.current = supabase
       .channel('inbox-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        const m = payload.new
+        handleEnvelope(payload, [REALTIME_EVENTS.MESSAGE_CREATED], (m) => {
         const mapped = mapMsg(m)
 
         setMsgs((prev) => {
@@ -243,21 +297,40 @@ export default function Inbox() {
             ? { ...c, last_message: m.content, last_message_at: m.created_at, unread: c.id !== activeId ? (c.unread || 0) + 1 : 0 }
             : c
         )))
+        })
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'conversations' }, (payload) => {
-        setConvs((prev) => prev.map((c) => (
-          c.id === payload.new.id ? { ...c, ...mapConvPartial(payload.new) } : c
-        )))
+        handleEnvelope(payload, [
+          REALTIME_EVENTS.CONVERSATION_UPDATED,
+          REALTIME_EVENTS.ASSIGNMENT_UPDATED,
+          REALTIME_EVENTS.KANBAN_UPDATED,
+        ], (row) => {
+          setConvs((prev) => prev.map((c) => (
+            c.id === row.id ? { ...c, ...mapConvPartial(row) } : c
+          )))
+        })
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversations' }, () => loadConvs())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversations' }, (payload) => {
+        handleEnvelope(payload, [REALTIME_EVENTS.CONVERSATION_CREATED], () => loadConvs())
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_members' }, (payload) => {
+        handleEnvelope(payload, [REALTIME_EVENTS.PRESENCE_UPDATED], () => loadPresence())
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_users' }, (payload) => {
+        handleEnvelope(payload, [REALTIME_EVENTS.PRESENCE_UPDATED], () => loadPresence())
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
+        handleEnvelope(payload, [REALTIME_EVENTS.PRESENCE_UPDATED], () => loadPresence())
+      })
       .subscribe()
 
     return () => {
       supabase.removeChannel(realtimeSub.current)
     }
-  }, [user, activeId, loadConvs])
+  }, [user, ws?.id, activeId, loadConvs, loadPresence, canViewRoutingReason])
 
   useEffect(() => { loadConvs() }, [loadConvs])
+  useEffect(() => { loadPresence() }, [loadPresence])
 
   useEffect(() => {
     if (loading) return
@@ -818,6 +891,8 @@ export default function Inbox() {
               ['Empresa', activeConv.contact_company || '-'],
               ['Prioridade', PRI_LABELS[activeConv.priority] || '-'],
               ['Estado', STATE_LABELS[activeConv.state] || '-'],
+              ['Responsavel', activeConv.assigned_to ? (activeAssignee?.name || 'Atribuido') : 'Sem dono'],
+              ['Presenca', activeAssignee ? (activeAssignee.is_online ? 'Online' : 'Offline') : `${onlineAgents} online`],
             ].map(([k, v]) => (
               <div key={k} style={s.panelRow}>
                 <span style={s.panelKey}>{k}</span>

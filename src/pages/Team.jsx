@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { Activity, UserCog } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import {
+  REALTIME_EVENTS,
+  envelopeFromPostgresChange,
+  shouldHandleRealtimeEnvelope,
+} from '../lib/realtimeEvents'
 import { EmptyState, GlassCard, PageHeader, PageShell, SkeletonBlock, StatusPill } from '../components/app/WorkspaceUI'
 
 function normalizeMember(item, source, fallbackUser = null) {
@@ -119,10 +124,16 @@ export default function Team() {
 
     loadMembers()
 
+    const handlePresence = (payload) => {
+      const envelope = envelopeFromPostgresChange(payload, { workspaceId: ws?.id })
+      if (shouldHandleRealtimeEnvelope(envelope, ws?.id, [REALTIME_EVENTS.PRESENCE_UPDATED])) loadMembers()
+    }
+
     const channel = supabase
       .channel('workspace-members-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_members' }, () => loadMembers())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_users' }, () => loadMembers())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_members' }, handlePresence)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_users' }, handlePresence)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, handlePresence)
       .subscribe()
 
     return () => {
