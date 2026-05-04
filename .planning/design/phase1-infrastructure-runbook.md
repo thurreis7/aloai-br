@@ -41,9 +41,9 @@ Workflow:
 Required Render env vars:
 
 - `SUPABASE_URL=https://mhrnptfqapizrulexnqo.supabase.co`
-- `SUPABASE_SERVICE_KEY=<current service role key>`
+- `SUPABASE_SERVICE_KEY=<rotated service role key>`
 - `EVOLUTION_URL=https://<evolution-host>`
-- `EVOLUTION_API_KEY=<current Evolution API key>`
+- `EVOLUTION_API_KEY=<rotated Evolution API key>`
 - `FRONTEND_URL=https://app.aloai.com.br`
 - `PORT=3000`
 - `NODE_ENV=production`
@@ -87,18 +87,23 @@ Service type:
 
 Container image:
 
-- `atendai/evolution-api:v2`
+- fork of the current Evolution API v2 image with the internal `.env` removed
 
 Required env vars:
 
 - `DATABASE_URL=<Supabase direct Postgres URL on port 5432>`
-- `AUTHENTICATION_API_KEY=aloai2025`
+- `AUTHENTICATION_API_KEY=<rotated Evolution API key>`
+- `WEBHOOK_GLOBAL_ENABLED=true`
+- `WEBHOOK_GLOBAL_URL=https://aloai-br-1i7u.onrender.com/webhook/whatsapp`
 
 Deployment notes:
 
 - Keep Evolution isolated as a separate Render Web Service from `alo-ai-api`
 - Use the Supabase direct Postgres connection on port `5432`
 - Do not route Evolution through pgbouncer
+- Do not switch WhatsApp providers in v1
+- The fork must remove the image-level `.env` so Render environment variables are authoritative
+- Rotate any previously exposed Evolution API key before RC
 
 After deploy:
 

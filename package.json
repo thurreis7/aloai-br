@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "smoke:phase6": "powershell -ExecutionPolicy Bypass -File scripts/smoke/phase6-critical-paths.ps1"
+    "smoke:phase6": "powershell -ExecutionPolicy Bypass -File scripts/smoke/phase6-critical-paths.ps1",
+    "smoke:v1": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -ExecutionPolicy Bypass -File scripts/smoke/v1-final.ps1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",
