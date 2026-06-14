@@ -1,90 +1,74 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: "### Phase 8: WhatsApp Production Recovery"
-status: executing
-stopped_at: Phase 8 execution checkpoint - external production actions required
-last_updated: "2026-05-04T04:11:26.118Z"
-last_activity: 2026-05-04 -- Phase 08 execution started
-progress:
-  total_phases: 1
-  completed_phases: 0
-  total_plans: 2
-  completed_plans: 0
-  percent: 0
+project: ALO AI
+canonical_spec: ALOAI-v1-spec.md
+status: active
+active_phase: "04 + 05"
+active_phase_name: "M04 Channels + M05 AI Layer; M06 Dashboard + M07 Settings"
+last_updated: "2026-06-07"
+last_confirmed_checkpoint: "phase 04 M05 runtime paths implemented"
+last_confirmed_build: "passing (api + frontend + security scans)"
+stopped_at: "Phase 04 execution complete; runtime/manual evidence pending"
+resume_file: ".planning/phases/04-m04-channels-m05-ai-layer/04-CONTEXT.md"
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-24)
+Project name: ALO AI
+Canonical spec: `ALOAI-v1-spec.md`
+Project type: brownfield active codebase, mid-completion
 
-**Core value:** Every inbound conversation should enter one unified, AI-assisted CRM workflow that helps the right team act faster without losing brand context or human control.
-**Current focus:** Phase 08 — whatsapp-production-recovery
+The previous roadmap is superseded by the current v1 spec-aligned roadmap in `.planning/ROADMAP.md`.
 
 ## Current Position
 
-Phase: 08 (whatsapp-production-recovery) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 08
-Last activity: 2026-05-04 -- Phase 08 execution started
+Active phase: 04 (partial) + 05 (partial)
 
-Progress: [#########-] 88%
+Current focus:
+- Collect M05 AI runtime proof on real or seeded inbound conversations.
+- Then close M06 Dashboard gaps.
+- Keep M04 real-device WhatsApp smoke testing tracked as an external blocker.
 
-## Performance Metrics
+## Next Action
 
-**Velocity:**
+1. Collect Phase 04 runtime/manual evidence:
+   - triage tag DB value plus Inbox badge within 5s
+   - sentiment DB value plus Inbox badge within 10s
+   - next-action chip within 3s and no auto-send proof
+   - real-device M04 WhatsApp smoke test or three documented blocked attempts
 
-- Total plans completed: 6
-- Average duration: 0 min
-- Total execution time: 0.1 hours
+2. Close M06 Dashboard gaps:
+   - first-response-time average
+   - resolution rate
+   - SLA risk count
+   - agent performance table
 
-**By Phase:**
+3. Prepare Phase 06 validation:
+   - formal RLS cross-workspace test
+   - JWT route coverage
+   - Realtime dashboard confirmation
+   - real-device M04 WhatsApp smoke test
+   - full Section 18 evidence matrix
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 1 | 2 | 0.1h | 0.1h |
-| 2 | 2 | 0.0h | - |
-| 3 | 2 | 0.0h | - |
+## Blockers
 
-**Recent Trend:**
+- M04 smoke test requires external WhatsApp device plus production Evolution/Render credentials.
 
-- Last 5 plans: 01-02, 02-01, 02-02, 03-01, 03-02
-- Trend: Continuing
+## Confirmed Checkpoints
 
-## Accumulated Context
+- Last confirmed checkpoint: webhook integrity patch.
+- Last confirmed build: passing (api + frontend + security scans) on 2026-06-07.
+- Phase 04 execution artifacts: `.planning/phases/04-m04-channels-m05-ai-layer/04-01-SUMMARY.md`, `.planning/phases/04-m04-channels-m05-ai-layer/04-02-SUMMARY.md`.
 
-### Decisions
+## Phase Status
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- [Init]: Treat the repo as a brownfield multichannel CRM, not a new greenfield app.
-- [Init]: Optimize the current milestone around production-ready unified inbox delivery.
-- [Init]: Preserve the existing React, Supabase, and Fastify architecture wherever practical.
-
-### Pending Todos
-
-None yet.
-
-### Blockers/Concerns
-
-- Phase 4 should preserve the workspace-scoped AI context contract instead of bypassing it with route-local heuristics.
-- Routing and qualification must continue to respect workspace isolation and role boundaries established in phases 1 through 3.
-- Phase 8 must resolve CHAN-01 by removing the Evolution API internal `.env` override, rotating `AUTHENTICATION_API_KEY`, updating the WhatsApp webhook to `https://aloai-br-1i7u.onrender.com/webhook/whatsapp`, and validating inbound/outbound WhatsApp on Render.
-
-## Deferred Items
-
-| Category | Item | Status | Deferred At |
-|----------|------|--------|-------------|
-| *(none)* | | | |
-
-## Session Continuity
-
-Last session: 2026-05-04T02:46:45.509Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-promise-parity-and-launch-readiness/07-CONTEXT.md
-
-**Planned Phase:** 8 (pending) - ready to execute
-**Executed Phase:** 7 (Promise Parity And Launch Readiness) - execution complete; guided UAT pending - 2026-05-04
+| Phase | Status | Notes |
+|---|---|---|
+| 01 - Foundation + Webhook Integrity | Complete | Webhook logs, idempotency, and build proof captured previously. |
+| 02 - M01 Inbox Core | Complete | Internal notes, read receipts, and voice player evidence captured. |
+| 03 - M02 Kanban + M03 Contacts | Complete | localStorage filter, card navigation, and VIP badge evidence captured. |
+| 04 - M04 Channels + M05 AI Layer | Partial | M05 runtime paths implemented and build/security verified; runtime UI/DB proof and external WhatsApp smoke test remain. |
+| 05 - M06 Dashboard + M07 Settings | Partial | Dashboard metrics remain; Settings evidence is mostly complete. |
+| 06 - Section 18 Validation + Go-Live | Not started | Formal validation phase remains. |

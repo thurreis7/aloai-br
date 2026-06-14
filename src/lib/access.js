@@ -27,6 +27,7 @@ function normalizeWorkspace(item) {
     name,
     company_name: item.company_name || item.name || name,
     slug: item.slug || null,
+    logo_url: item.logo_url || null,
     plan: item.plan || null,
     ai_enabled: Boolean(item.ai_enabled),
     created_at: item.created_at || null,
@@ -121,7 +122,7 @@ async function loadProfileFromUsers(userId) {
 async function loadWorkspacesFromWorkspacesTable() {
   const { data, error } = await supabase
     .from('workspaces')
-    .select('id, company_name, name, slug, plan, ai_enabled, created_at')
+    .select('id, company_name, name, slug, logo_url, plan, ai_enabled, created_at')
     .order('created_at', { ascending: true })
 
   if (error) throw error
@@ -131,7 +132,7 @@ async function loadWorkspacesFromWorkspacesTable() {
 async function loadWorkspacesFromCompaniesTable() {
   const { data, error } = await supabase
     .from('companies')
-    .select('id, company_name, name, slug, plan, ai_enabled, created_at')
+    .select('id, company_name, name, slug, logo_url, plan, ai_enabled, created_at')
     .order('created_at', { ascending: true })
 
   if (error) throw error
@@ -162,7 +163,7 @@ async function loadWorkspacesFromUsersTable() {
 async function loadWorkspaceByIdFromWorkspaces(workspaceId) {
   const { data, error } = await supabase
     .from('workspaces')
-    .select('id, company_name, name, slug, plan, ai_enabled, created_at')
+    .select('id, company_name, name, slug, logo_url, plan, ai_enabled, created_at')
     .eq('id', workspaceId)
     .maybeSingle()
 
@@ -173,7 +174,7 @@ async function loadWorkspaceByIdFromWorkspaces(workspaceId) {
 async function loadWorkspaceByIdFromCompanies(workspaceId) {
   const { data, error } = await supabase
     .from('companies')
-    .select('id, company_name, name, slug, plan, ai_enabled, created_at')
+    .select('id, company_name, name, slug, logo_url, plan, ai_enabled, created_at')
     .eq('id', workspaceId)
     .maybeSingle()
 

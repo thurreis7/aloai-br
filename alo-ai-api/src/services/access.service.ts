@@ -76,6 +76,48 @@ export class AccessService {
     }
   }
 
+  async loadWorkspaceRow(workspaceId: string) {
+    this.assertUuid(workspaceId, 'workspaceId')
+    const result = await this.supabase.admin
+      .from('workspaces')
+      .select('id, plan, ai_enabled')
+      .eq('id', workspaceId)
+      .maybeSingle()
+
+    if (result.error) {
+      throw new ForbiddenException('Falha ao carregar o workspace.')
+    }
+
+    if (!result.data) {
+      throw new ForbiddenException('Workspace nao encontrado.')
+    }
+
+    return result.data
+  }
+
+  async assertWorkspaceAiAccess(context: RequestAccessContext, workspaceId: string) {
+    await this.assertWorkspaceAccess(context, workspaceId)
+    const workspace = await this.loadWorkspaceRow(workspaceId)
+
+    if (!workspace.ai_enabled) {
+      throw new ForbiddenException({
+        message: 'Recursos de IA estao desativados para este workspace.',
+        code: 'AI_DISABLED',
+      })
+    }
+
+    const allowedPlans = ['pro', 'business']
+    if (!allowedPlans.includes(String(workspace.plan || '').toLowerCase())) {
+      throw new ForbiddenException({
+        message: 'Este plano nao permite recursos de IA.',
+        code: 'AI_PLAN_NOT_ALLOWED',
+        plan: workspace.plan,
+      })
+    }
+
+    return workspace
+  }
+
   private async loadProfile(userId: string) {
     const extended = await this.supabase.admin
       .from('users')

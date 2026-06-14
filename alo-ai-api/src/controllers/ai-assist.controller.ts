@@ -44,13 +44,50 @@ export class AiAssistController {
     @Param('conversationId') conversationId: string,
   ) {
     const context = await this.accessService.resolveRequestContext(authorization)
-    await this.accessService.assertWorkspaceAccess(context, workspaceId)
+    await this.accessService.assertWorkspaceAiAccess(context, workspaceId)
 
     return this.aiAssistService.suggestReply({
       workspaceId,
       conversationId,
       userId: context.user.id,
       role: context.role,
+    })
+  }
+
+  @Post('/conversations/:conversationId/next-action')
+  async suggestNextAction(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('workspaceId') workspaceId: string,
+    @Param('conversationId') conversationId: string,
+  ) {
+    const context = await this.accessService.resolveRequestContext(authorization)
+    await this.accessService.assertWorkspaceAiAccess(context, workspaceId)
+
+    return this.aiAssistService.suggestNextAction({
+      workspaceId,
+      conversationId,
+      userId: context.user.id,
+      role: context.role,
+    })
+  }
+
+  @Patch('/conversations/:conversationId/triage')
+  async updateTriageTag(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('workspaceId') workspaceId: string,
+    @Param('conversationId') conversationId: string,
+    @Body() body: Record<string, any>,
+  ) {
+    const context = await this.accessService.resolveRequestContext(authorization)
+    await this.accessService.assertWorkspaceAiAccess(context, workspaceId)
+    if (!context.isOwner && !['owner', 'admin', 'supervisor'].includes(context.role)) {
+      throw new ForbiddenException('Apenas supervisor, admin e owner podem editar triagem.')
+    }
+
+    return this.aiAssistService.updateTriageTag({
+      workspaceId,
+      conversationId,
+      triageTag: body?.triageTag || body?.triage_tag,
     })
   }
 
@@ -61,7 +98,7 @@ export class AiAssistController {
     @Param('conversationId') conversationId: string,
   ) {
     const context = await this.accessService.resolveRequestContext(authorization)
-    await this.accessService.assertWorkspaceAccess(context, workspaceId)
+    await this.accessService.assertWorkspaceAiAccess(context, workspaceId)
 
     return this.routingService.classifyConversation({
       workspaceId,
@@ -77,7 +114,7 @@ export class AiAssistController {
     @Param('conversationId') conversationId: string,
   ) {
     const context = await this.accessService.resolveRequestContext(authorization)
-    await this.accessService.assertWorkspaceAccess(context, workspaceId)
+    await this.accessService.assertWorkspaceAiAccess(context, workspaceId)
 
     return this.routingService.recommendRouting({
       workspaceId,

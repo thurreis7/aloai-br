@@ -2,11 +2,11 @@
 
 ## What This Is
 
-ALO AI is a brownfield multichannel service CRM that already combines a React frontend, Supabase-backed workspace model, and messaging integrations around a shared inbox experience. The current product direction is to make that promise production-real: WhatsApp, Instagram, email, and web chat should operate inside one unified CRM workflow with workspace-specific AI context, intelligent routing, lead qualification, and reliable human handoff.
+ALO AI is a brownfield service CRM that already combines a React frontend, Supabase-backed workspace model, and messaging integrations around a shared inbox experience. `ALOAI-v1-spec.md` is the canonical v1 spec. The codebase is active and mid-completion, so planning should preserve existing implementation work and focus on closing runtime proof, partial module gaps, and go-live validation.
 
 ## Core Value
 
-Every inbound conversation should enter one unified, AI-assisted CRM workflow that helps the right team act faster without losing brand context or human control.
+Every inbound conversation should enter one unified, AI-assisted CRM workflow that helps the right team act faster without losing workspace context, data isolation, or human control.
 
 ## Requirements
 
@@ -20,25 +20,25 @@ Every inbound conversation should enter one unified, AI-assisted CRM workflow th
 
 ### Active
 
-- [ ] Deliver a production-ready unified inbox where WhatsApp, Instagram, email, and web chat operate through one CRM workflow.
-- [ ] Ground AI behavior in workspace-specific context, knowledge, tone, and operating rules rather than static local placeholders.
-- [ ] Add intelligent routing, lead qualification, prioritization, and stage movement that match commercial and support workflows.
-- [ ] Ensure AI-to-human handoff is explicit, safe, auditable, and operationally clear for agents and supervisors.
-- [ ] Close the gap between the landing-page promise and the actual end-to-end product behavior.
+- [ ] Close M05 AI runtime proofs for triage tag, sentiment flag, and next-action suggestion behavior.
+- [ ] Close M06 Dashboard gaps for first-response average, resolution rate, SLA risk count, and agent performance table.
+- [ ] Validate M04 WhatsApp production behavior with a real device and production credentials.
+- [ ] Complete the Section 18 evidence matrix against `ALOAI-v1-spec.md`.
+- [ ] Preserve workspace isolation and security requirements from Section 16 through formal validation.
 
 ### Out of Scope
 
 - Native mobile apps - the current product is web-first and should ship reliable browser operations before expanding platforms.
 - Broad greenfield redesign of the frontend - the repo already has established structure, routes, and design language worth preserving.
-- General-purpose AI assistant features unrelated to inbox/CRM workflow - they dilute the immediate platform promise and delivery focus.
+- General-purpose AI assistant features unrelated to inbox/CRM workflow - they dilute the immediate v1 delivery focus.
 
 ## Context
 
-- The brownfield codebase consists of a Vite + React SPA in `src/`, Supabase migrations and Edge Functions in `supabase/`, and a sibling Fastify service in `alo-ai-api/`.
-- The current landing page in `src/pages/Landing.jsx` explicitly promises one inbox for WhatsApp, Instagram, email, and web chat, plus AI assistance, prioritization, and scalable operations.
-- Existing pages already expose early surfaces for channels, knowledge, automation, team, reporting, and inbox flows, but several of those pages still rely on local state, placeholder rules, or incomplete integration depth.
-- Multitenancy is mid-transition between `companies` and `workspaces`, so schema alignment and access consistency are foundational concerns for any production hardening.
-- The riskiest brownfield areas are `src/lib/access.js`, `src/hooks/useAuth.jsx`, `src/hooks/usePermissions.jsx`, `src/pages/Inbox.jsx`, `alo-ai-api/src/index.js`, and the Supabase messaging/provisioning functions.
+- The brownfield codebase consists of a Vite + React SPA in `src/`, Supabase migrations and functions in `supabase/`, and a backend service in `alo-ai-api/`.
+- The current canonical planning source is `ALOAI-v1-spec.md`, especially Section 18 for acceptance and Section 16 for security/isolation.
+- Current roadmap state: Phase 01, 02, and 03 complete; Phase 04 and 05 partial; Phase 06 not started.
+- The most important external blocker is M04 WhatsApp smoke testing, which requires a real device plus production Evolution/Render credentials.
+- Do not treat code presence as sufficient acceptance. Runtime or test evidence is required before closing Section 18 items.
 
 ## Constraints
 
@@ -54,10 +54,10 @@ Every inbound conversation should enter one unified, AI-assisted CRM workflow th
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Use brownfield initialization rather than greenfield project setup | The repository already contains a working product surface, live architecture, and established conventions | Good |
-| Optimize the next milestone around unified multichannel inbox delivery | This directly matches the current landing-page promise and user-stated priority | Pending |
+| Treat `ALOAI-v1-spec.md` as canonical | The project has migrated to the v1 spec and older planning is historical unless explicitly reopened | Good |
+| Resume from Phase 04 and Phase 05 partial work | Phase 01-03 evidence exists; remaining work is runtime proof and dashboard gaps | Good |
 | Preserve the current React + Supabase + Fastify structure | Existing code already spans frontend, backend, and Supabase operational flows | Pending |
-| Treat workspace-specific AI context and human handoff as first-class requirements | AI without tenant grounding or safe escalation would break the product promise | Pending |
 | Include production hardening in roadmap scope, not as a later cleanup | The app already exposes real auth, tenant, and messaging risks that affect release readiness | Pending |
 
 ---
-*Last updated: 2026-04-24 after brownfield project initialization*
+*Last updated: 2026-06-05 after GSD Codex reinstall and v1 spec state initialization*

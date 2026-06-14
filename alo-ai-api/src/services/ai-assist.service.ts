@@ -1,6 +1,7 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common'
+import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException } from '@nestjs/common'
 import { AiContextService } from './ai-context.service'
 import { SupabaseService } from './supabase.service'
+import { AccessService } from './access.service'
 
 function tokenize(value: string) {
   return String(value || '')
@@ -25,11 +26,23 @@ function isCopilotPaused(aiState: any) {
   return String(copilot.mode || '').toLowerCase() === 'paused'
 }
 
+const TRIAGE_TAGS = new Set(['suporte', 'vendas', 'cobranca', 'urgente', 'spam', 'recorrente', 'outros'])
+
+function normalizeTriageTag(value: string) {
+  const normalized = String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9_]+/g, '')
+  return TRIAGE_TAGS.has(normalized) ? normalized : null
+}
+
 @Injectable()
 export class AiAssistService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly aiContextService: AiContextService,
+    private readonly accessService: AccessService,
   ) {}
 
   async getWorkspaceConfig(workspaceId: string) {
@@ -62,6 +75,7 @@ export class AiAssistService {
     userId: string
     role: string
   }) {
+    await this.ensureAiWorkspaceEnabled(input.workspaceId)
     const configRow = await this.aiContextService.loadWorkspaceConfigRow(input.workspaceId)
     const config = this.aiContextService.normalizeConfigRow(input.workspaceId, configRow)
     const { conversation, messages } = await this.aiContextService.loadConversationContext(input.workspaceId, input.conversationId)
@@ -80,7 +94,7 @@ export class AiAssistService {
     }
 
     const recentMessages = messages.slice(-6)
-    const latestClientMessage = [...recentMessages].reverse().find((item) => item.sender_type === 'client')
+    const latestClientMessage = [...recentMessages].reverse().find((item) => ['client', 'contact'].includes(item.sender_type))
     const latestText = String(latestClientMessage?.content || conversation.last_message || '').trim()
     if (String(conversation.state || conversation.status || '').toLowerCase() === 'closed') {
       return {
@@ -125,6 +139,103 @@ export class AiAssistService {
     }
   }
 
+  async suggestNextAction(input: {
+    workspaceId: string
+    conversationId: string
+    userId: string
+    role: string
+  }) {
+    await this.ensureAiWorkspaceEnabled(input.workspaceId)
+    const { conversation, messages } = await this.aiContextService.loadConversationContext(input.workspaceId, input.conversationId)
+
+    if (String(conversation.state || conversation.status || '').toLowerCase() === 'closed') {
+      return { available: false, reason: 'Conversa encerrada.', action: null }
+    }
+    if (isCopilotPaused(conversation.ai_state)) {
+      return { available: false, reason: 'Copilot pausado.', action: null }
+    }
+
+    const latestClientMessage = [...messages].reverse().find((item) => ['client', 'contact'].includes(item.sender_type))
+    const latestText = String(latestClientMessage?.content || conversation.last_message || '').toLowerCase()
+    const triageTag = normalizeTriageTag(conversation.triage_tag) || 'outros'
+    const sentiment = String(conversation.sentiment || 'normal').toLowerCase()
+
+    if (['angry', 'urgent'].includes(sentiment) || triageTag === 'urgente') {
+      return {
+        available: true,
+        action: 'assign',
+        label: 'Priorizar supervisor',
+        description: 'Revisar dono e fila antes de responder.',
+        reason: 'Conversa com sinal de urgencia ou irritacao.',
+      }
+    }
+
+    if (triageTag === 'spam') {
+      return {
+        available: true,
+        action: 'dismiss',
+        label: 'Descartar chip',
+        description: 'Manter conversa sem sugestao automatica.',
+        reason: 'Triagem marcou a conversa como spam.',
+      }
+    }
+
+    if (triageTag === 'vendas' || /(preco|plano|valor|orcamento|proposta|comprar)/.test(latestText)) {
+      return {
+        available: true,
+        action: 'use_suggestion',
+        label: 'Sugerir proposta',
+        description: 'Gerar rascunho editavel para o operador.',
+        reason: 'Intencao comercial detectada.',
+      }
+    }
+
+    if (String(conversation.state || '').toLowerCase() === 'waiting_customer') {
+      return {
+        available: true,
+        action: 'follow_up',
+        label: 'Preparar follow-up',
+        description: 'Inserir nota editavel no composer.',
+        reason: 'Conversa aguardando retorno do cliente.',
+      }
+    }
+
+    return {
+      available: true,
+      action: 'use_suggestion',
+      label: 'Sugerir resposta',
+      description: 'Gerar rascunho editavel; nada sera enviado automaticamente.',
+      reason: 'Contexto suficiente para assistencia.',
+    }
+  }
+
+  async updateTriageTag(input: {
+    workspaceId: string
+    conversationId: string
+    triageTag: string
+  }) {
+    const triageTag = normalizeTriageTag(input.triageTag)
+    if (!triageTag) throw new BadRequestException('Categoria de triagem invalida.')
+
+    const { data, error } = await this.supabase.admin
+      .from('conversations')
+      .update({ triage_tag: triageTag })
+      .eq('workspace_id', input.workspaceId)
+      .eq('id', input.conversationId)
+      .select(`
+        id, workspace_id, state, status, priority, assigned_to, unread_count,
+        last_message, last_message_at,
+        routing_queue, routing_intent, routing_confidence, routing_reason, routing_source,
+        triage_tag, sentiment, sentiment_confidence,
+        ai_state, escalated_at, escalated_by, escalation_reason, escalation_note
+      `)
+      .maybeSingle()
+
+    if (error) throw new InternalServerErrorException(error.message)
+    if (!data?.id) throw new BadRequestException('Conversa nao encontrada.')
+    return { conversation: data }
+  }
+
   private findBestFaqMatch(faqRules: Array<{ question: string; answer: string; id: string }>, message: string) {
     const messageTokens = new Set(tokenize(message))
     let bestMatch: { id: string; question: string; answer: string } | null = null
@@ -156,5 +267,24 @@ export class AiAssistService {
     const latestSnippet = latestText.length > 120 ? `${latestText.slice(0, 117)}...` : latestText
 
     return `${prefix} ${recipient}sobre "${latestSnippet}", ${anchor}. Posso seguir com esse direcionamento?`.trim()
+  }
+
+  private async ensureAiWorkspaceEnabled(workspaceId: string) {
+    const workspace = await this.accessService.loadWorkspaceRow(workspaceId)
+    if (!workspace.ai_enabled) {
+      throw new ForbiddenException({
+        message: 'Recursos de IA estao desativados para este workspace.',
+        code: 'AI_DISABLED',
+      })
+    }
+
+    const allowedPlans = ['pro', 'business']
+    if (!allowedPlans.includes(String(workspace.plan || '').toLowerCase())) {
+      throw new ForbiddenException({
+        message: 'Este plano nao permite recursos de IA.',
+        code: 'AI_PLAN_NOT_ALLOWED',
+        plan: workspace.plan,
+      })
+    }
   }
 }

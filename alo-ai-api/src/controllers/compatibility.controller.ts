@@ -1,9 +1,11 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Headers, Param, Post } from '@nestjs/common'
+import { BadRequestException, Body, Controller, ForbiddenException, Headers, Param, Post, Res } from '@nestjs/common'
+import { FastifyReply } from 'fastify'
 import { CreateUserDto } from '../dto/create-user.dto'
 import { SendWhatsappDto } from '../dto/send-whatsapp.dto'
 import { AccessService } from '../services/access.service'
 import { MessagingService } from '../services/messaging.service'
 import { ProvisioningService } from '../services/provisioning.service'
+import { ChannelsService } from '../services/channels.service'
 
 @Controller()
 export class CompatibilityController {
@@ -11,6 +13,7 @@ export class CompatibilityController {
     private readonly accessService: AccessService,
     private readonly provisioningService: ProvisioningService,
     private readonly messagingService: MessagingService,
+    private readonly channelsService: ChannelsService,
   ) {}
 
   @Post('/admin/users')
@@ -59,8 +62,50 @@ export class CompatibilityController {
   }
 
   @Post('/webhook/whatsapp')
-  async webhookWhatsapp(@Body() body: any) {
-    return this.messagingService.handleWhatsappWebhook(body)
+  async webhookWhatsapp(
+    @Headers() headers: Record<string, string | string[] | undefined>,
+    @Body() body: any,
+    @Res() reply: FastifyReply,
+  ) {
+    return this.acknowledgeWhatsapp(headers, body, reply)
+  }
+
+  @Post('/webhooks/whatsapp')
+  async webhooksWhatsapp(
+    @Headers() headers: Record<string, string | string[] | undefined>,
+    @Body() body: any,
+    @Res() reply: FastifyReply,
+  ) {
+    return this.acknowledgeWhatsapp(headers, body, reply)
+  }
+
+  private async acknowledgeWhatsapp(
+    headers: Record<string, string | string[] | undefined>,
+    body: any,
+    reply: FastifyReply,
+  ) {
+    if (body?.event === 'connection.update') {
+      await this.channelsService.handleConnectionUpdate(body)
+      reply.status(200).send()
+      return
+    }
+
+    if (body?.event === 'messages.update' || body?.event === 'message.ack') {
+      await this.messagingService.handleMessageStatusUpdate(body)
+      reply.status(200).send()
+      return
+    }
+
+    const job = await this.messagingService.acknowledgeWhatsappWebhook(headers?.apikey, body)
+    reply.status(200).send()
+
+    void this.messagingService.processAcknowledgedWhatsappWebhook(job).catch((error) => {
+      console.error({
+        topic: 'whatsapp_webhook_async_failure',
+        workspace_id: job.channel.workspace_id,
+        error: error?.message || String(error),
+      })
+    })
   }
 
   @Post('/send/whatsapp')

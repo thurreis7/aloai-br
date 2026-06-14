@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { GripVertical } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { GripVertical, Star } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { usePermissions } from '../hooks/usePermissions'
 import { useAuth } from '../hooks/useAuth'
@@ -52,12 +53,15 @@ function isOpenState(state) {
 export default function Kanban() {
   const { can } = usePermissions()
   const { ws, loading: authLoading, workspaceReady } = useAuth()
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [cards, setCards] = useState([])
   const [draggingId, setDraggingId] = useState(null)
   const [dropColumn, setDropColumn] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
+  const [companyFilter, setCompanyFilter] = useState('')
+  const [wasDragged, setWasDragged] = useState(false)
   const boardRef = useRef(null)
 
   const loadBoard = useCallback(async ({ silent = false } = {}) => {
@@ -79,7 +83,7 @@ export default function Kanban() {
     try {
       const { data, error: queryError } = await supabase
         .from('conversations')
-        .select('id, state, status, priority, routing_queue, routing_intent, routing_reason, assigned_to, ai_state, escalated_at, escalation_reason, escalation_note, last_message, last_message_at, contacts(name, company), channels(name, type), leads(status, owner_id, source_channel_id)')
+        .select('id, state, status, priority, routing_queue, routing_intent, routing_reason, assigned_to, ai_state, escalated_at, escalation_reason, escalation_note, last_message, last_message_at, contacts(name, company, is_vip), channels(name, type), leads(status, owner_id, source_channel_id)')
         .eq('workspace_id', ws.id)
         .order('last_message_at', { ascending: false })
 
@@ -105,6 +109,8 @@ export default function Kanban() {
         updatedAt: item.last_message_at,
         contactName: item.contacts?.name || 'Contato sem nome',
         company: item.contacts?.company || 'Empresa nao informada',
+        contact: { is_vip: item.contacts?.is_vip === true },
+        conversationId: item.id,
         channel: item.channels?.name || item.channels?.type || 'Canal',
       })))
       setSelectedId((current) => current || data?.[0]?.id || null)
@@ -118,6 +124,15 @@ export default function Kanban() {
   useEffect(() => {
     loadBoard()
   }, [loadBoard])
+
+  useEffect(() => {
+    if (!ws?.id) {
+      setCompanyFilter('')
+      return
+    }
+    const saved = localStorage.getItem(`kanban_company_filter_${ws.id}`)
+    setCompanyFilter(saved || '')
+  }, [ws?.id])
 
   useEffect(() => {
     if (!ws?.id) return undefined
@@ -146,11 +161,19 @@ export default function Kanban() {
   }, [ws?.id, loadBoard])
 
   const grouped = useMemo(() => {
+    const visibleCards = companyFilter
+      ? cards.filter((card) => card.company === companyFilter)
+      : cards
+
     return STATE_COLUMNS.map((column) => ({
       ...column,
-      cards: cards.filter((card) => card.state === column.id),
+      cards: visibleCards.filter((card) => card.state === column.id),
     }))
-  }, [cards])
+  }, [cards, companyFilter])
+
+  const companies = useMemo(() => (
+    [...new Set(cards.map((card) => card.company).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  ), [cards])
 
   const selected = cards.find((item) => item.id === selectedId) || null
   const operational = useMemo(() => {
@@ -219,6 +242,20 @@ export default function Kanban() {
             {can('perm_reports_metrics') ? <StatusPill tone="default">Sem dono: {operational.unassigned}</StatusPill> : null}
             {can('perm_reports_metrics') ? <StatusPill tone="error">Escalonadas: {operational.escalated}</StatusPill> : null}
             {can('perm_reports_metrics') ? <StatusPill tone="warning">IA pausada: {operational.aiPaused}</StatusPill> : null}
+            <select
+              value={companyFilter}
+              onChange={(event) => {
+                const selectedCompany = event.target.value
+                setCompanyFilter(selectedCompany)
+                if (ws?.id) localStorage.setItem(`kanban_company_filter_${ws.id}`, selectedCompany)
+              }}
+              style={{ minHeight: 30, borderRadius: 8, border: '1px solid rgba(255,255,255,.1)', background: 'rgba(255,255,255,.04)', color: 'var(--txt2)', padding: '0 10px', font: 'inherit', fontSize: 12 }}
+            >
+              <option value="">Todas as empresas</option>
+              {companies.map((company) => (
+                <option key={company} value={company}>{company}</option>
+              ))}
+            </select>
           </div>
         )}
       />
@@ -292,12 +329,19 @@ export default function Kanban() {
                       key={card.id}
                       type="button"
                       draggable={can('perm_kanban_move')}
-                      onDragStart={() => setDraggingId(card.id)}
+                      onDragStart={() => {
+                        setWasDragged(true)
+                        setDraggingId(card.id)
+                      }}
                       onDragEnd={() => {
                         setDraggingId(null)
                         setDropColumn(null)
+                        setTimeout(() => setWasDragged(false), 100)
                       }}
-                      onClick={() => setSelectedId(card.id)}
+                      onClick={() => {
+                        setSelectedId(card.id)
+                        if (!wasDragged) navigate(`/inbox/${card.conversationId}`)
+                      }}
                       style={{
                         padding: 14,
                         borderRadius: 18,
@@ -310,7 +354,10 @@ export default function Kanban() {
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                         <div>
-                          <div style={{ fontWeight: 700, marginBottom: 4 }}>{card.contactName}</div>
+                          <div style={{ fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                            {card.contact?.is_vip ? <Star size={11} fill="var(--warning)" color="var(--warning)" aria-label="Cliente VIP" /> : null}
+                            {card.contactName}
+                          </div>
                           <div style={{ color: 'var(--txt3)', fontSize: 13 }}>{card.company}</div>
                         </div>
                         <GripVertical size={14} color="var(--txt4)" />

@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { usePermissions } from '../hooks/usePermissions'
 import { apiFetch, apiJson } from '../lib/api'
-import { MessageCircle, Inbox as InboxIconLucide } from 'lucide-react'
+import { AlertCircle, Check, CheckCheck, Loader2, MessageCircle, Inbox as InboxIconLucide, Star } from 'lucide-react'
 import {
   REALTIME_EVENTS,
   envelopeFromPostgresChange,
@@ -53,6 +53,26 @@ const ROUTING_INTENT_LABELS = {
   duvida_geral: 'Intencao geral',
   spam: 'Intencao spam',
 }
+const TRIAGE_LABELS = {
+  suporte: 'Suporte',
+  vendas: 'Vendas',
+  cobranca: 'Cobranca',
+  urgente: 'Urgente',
+  spam: 'Spam',
+  recorrente: 'Recorrente',
+  outros: 'Outros',
+}
+const SENTIMENT_LABELS = {
+  normal: 'Normal',
+  frustrated: 'Frustrado',
+  angry: 'Irritado',
+  urgent: 'Urgente',
+}
+const SENTIMENT_COLORS = {
+  frustrated: '#f59e0b',
+  angry: '#ef4444',
+  urgent: '#f97316',
+}
 const ESCALATION_REASON_LABELS = {
   none: 'Sem escalonamento',
   sensitive: 'Sensivel',
@@ -79,6 +99,16 @@ const normalizeRoutingQueue = (value) => {
 const normalizeRoutingIntent = (value) => {
   const key = String(value || '').trim().toLowerCase()
   return ROUTING_INTENT_LABELS[key] ? key : 'duvida_geral'
+}
+
+const normalizeTriageTag = (value) => {
+  const key = String(value || '').trim().toLowerCase()
+  return TRIAGE_LABELS[key] ? key : 'outros'
+}
+
+const normalizeSentiment = (value) => {
+  const key = String(value || '').trim().toLowerCase()
+  return SENTIMENT_LABELS[key] ? key : 'normal'
 }
 
 const normalizeAiState = (value) => {
@@ -110,6 +140,7 @@ function ChannelGlyph({ type, size = 14 }) {
 export default function Inbox() {
   const { user, ws, workspaceReady, loading: authLoading } = useAuth()
   const { can, convScope, canViewRoutingReason, canViewHandoffHistory, canManageHandoff } = usePermissions()
+  const { conversationId: routeConversationId } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [convs, setConvs] = useState([])
@@ -118,15 +149,20 @@ export default function Inbox() {
   const [loading, setLoading] = useState(true)
   const [msgsLoading, setMsgsLoading] = useState(false)
   const [input, setInput] = useState('')
+  const [internalNote, setInternalNote] = useState(false)
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
   const [filterState, setFilterState] = useState('all')
   const [aiSug, setAiSug] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiReason, setAiReason] = useState('')
+  const [nextAction, setNextAction] = useState(null)
+  const [nextActionLoading, setNextActionLoading] = useState(false)
+  const [nextActionDismissed, setNextActionDismissed] = useState({})
   const [routingLoading, setRoutingLoading] = useState(false)
   const [routingError, setRoutingError] = useState('')
   const [routingPreview, setRoutingPreview] = useState(null)
+  const [triageSaving, setTriageSaving] = useState(false)
   const [handoffLoading, setHandoffLoading] = useState(false)
   const [handoffError, setHandoffError] = useState('')
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -165,6 +201,7 @@ export default function Inbox() {
   const canTriggerHandoff = canManageHandoff && activeConv?.state !== 'closed'
   const activeAssignee = presenceMembers.find((member) => member.user_id === activeConv?.assigned_to || member.id === activeConv?.assigned_to) || null
   const onlineAgents = presenceMembers.filter((member) => member.is_online).length
+  const nextActionVisible = nextAction && nextAction.conversationId === activeId && !nextActionDismissed[activeId]
 
   const loadConvs = useCallback(async () => {
     if (authLoading || !workspaceReady || !user) {
@@ -187,8 +224,9 @@ export default function Inbox() {
           id, state, status, priority, unread_count,
           last_message, last_message_at, created_at, assigned_to,
           routing_queue, routing_intent, routing_confidence, routing_reason, routing_source,
+          triage_tag, sentiment, sentiment_confidence,
           ai_state, escalated_at, escalated_by, escalation_reason, escalation_note,
-          contacts ( id, name, phone, company, email ),
+          contacts ( id, name, phone, company, email, is_vip ),
           channels  ( id, type, name )
         `)
         .eq('workspace_id', ws.id)
@@ -211,15 +249,12 @@ export default function Inbox() {
   }, [user, ws, workspaceReady, authLoading, convScope, activeId])
 
   const loadMsgs = useCallback(async (convId) => {
-    if (!convId || msgs[convId]) return
+    if (!convId || !ws?.id || msgs[convId]) return
     setMsgsLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', convId)
-        .order('created_at', { ascending: true })
-        .limit(100)
+      const payload = await apiJson(`/workspaces/${ws.id}/conversations/${convId}/messages`)
+      const data = payload?.messages || []
+      const error = null
 
       if (error) throw error
       setMsgs((prev) => ({ ...prev, [convId]: (data || []).map(mapMsg) }))
@@ -228,7 +263,7 @@ export default function Inbox() {
     } finally {
       setMsgsLoading(false)
     }
-  }, [msgs])
+  }, [msgs, ws?.id])
 
   const loadPresence = useCallback(async () => {
     if (authLoading || !workspaceReady || !ws?.id) {
@@ -281,8 +316,30 @@ export default function Inbox() {
 
     realtimeSub.current = supabase
       .channel('inbox-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        handleEnvelope(payload, [REALTIME_EVENTS.MESSAGE_CREATED], (m) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `workspace_id=eq.${ws.id}` }, (payload) => {
+        const m = payload.new || {}
+        if (!m?.id || m.workspace_id !== ws.id) return
+
+        if (payload.eventType === 'UPDATE') {
+          setMsgs((prev) => {
+            if (!prev[m.conversation_id]) return prev
+            return {
+              ...prev,
+              [m.conversation_id]: prev[m.conversation_id].map((item) => (
+                item.id === m.id ? {
+                  ...item,
+                  status: m.status || item.status,
+                  transcription: m.transcription ?? item.transcription,
+                  transcriptionSummary: m.transcription_summary ?? item.transcriptionSummary,
+                  transcriptionStatus: m.transcription_status ?? item.transcriptionStatus,
+                } : item
+              )),
+            }
+          })
+          return
+        }
+
+        if (payload.eventType !== 'INSERT') return
         const mapped = mapMsg(m)
 
         setMsgs((prev) => {
@@ -292,12 +349,18 @@ export default function Inbox() {
           return { ...prev, [m.conversation_id]: [...prev[m.conversation_id], mapped] }
         })
 
-        setConvs((prev) => prev.map((c) => (
-          c.id === m.conversation_id
-            ? { ...c, last_message: m.content, last_message_at: m.created_at, unread: c.id !== activeId ? (c.unread || 0) + 1 : 0 }
-            : c
-        )))
-        })
+        if (!mapped.internalNote) {
+          setConvs((prev) => prev.map((c) => (
+            c.id === m.conversation_id
+              ? {
+                  ...c,
+                  last_message: m.content,
+                  last_message_at: m.created_at,
+                  unread: mapped.from === 'client' && c.id !== activeId ? (c.unread || 0) + 1 : c.unread,
+                }
+              : c
+          )))
+        }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'conversations' }, (payload) => {
         handleEnvelope(payload, [
@@ -334,7 +397,7 @@ export default function Inbox() {
 
   useEffect(() => {
     if (loading) return
-    const cid = searchParams.get('conv')
+    const cid = routeConversationId || searchParams.get('conv')
     if (!cid || !convs.length) return
     const found = convs.find((c) => String(c.id) === String(cid))
     if (found) setActiveId((cur) => (cur === found.id ? cur : found.id))
@@ -346,13 +409,16 @@ export default function Inbox() {
     markAsRead(activeId)
     setAiSug('')
     setAiReason('')
+    setNextAction(null)
     setRoutingError('')
     setRoutingPreview(null)
     setHandoffError('')
     setHandoffHistory([])
     setEscalationReason('sensitive')
     setEscalationNote('')
+    setInternalNote(false)
     loadHandoffHistory(activeId)
+    loadNextAction(activeId)
     setTimeout(() => inputRef.current?.focus(), 100)
   }, [activeId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -367,16 +433,18 @@ export default function Inbox() {
   const sendMessage = async () => {
     if (!input.trim() || !activeId || sending || !canWriteReply) return
     const text = input.trim()
+    const noteMode = internalNote
     setInput('')
+    setInternalNote(false)
     setSending(true)
 
-    const tempMsg = { id: `temp-${Date.now()}`, from: 'agent', text, time: now(), temp: true }
+    const tempMsg = { id: `temp-${Date.now()}`, from: 'agent', text, time: now(), temp: true, internalNote: noteMode }
     setMsgs((prev) => ({ ...prev, [activeId]: [...(prev[activeId] || []), tempMsg] }))
 
     try {
       const response = await apiFetch(`/workspaces/${ws?.id}/conversations/${activeId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, is_internal_note: noteMode }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload?.error || 'Nao foi possivel enviar a mensagem.')
@@ -387,13 +455,14 @@ export default function Inbox() {
         ...prev,
         [activeId]: (prev[activeId] || []).map((m) => (m.id === tempMsg.id ? (saved ? mapMsg(saved) : m) : m)),
       }))
-      if (conversation) {
+      if (conversation && !noteMode) {
         setConvs((prev) => prev.map((c) => (c.id === activeId ? { ...c, ...mapConvPartial(conversation) } : c)))
       }
     } catch (e) {
       console.error('Erro ao enviar mensagem:', e)
       setMsgs((prev) => ({ ...prev, [activeId]: (prev[activeId] || []).filter((m) => m.id !== tempMsg.id) }))
       setInput(text)
+      setInternalNote(noteMode)
     } finally {
       setSending(false)
     }
@@ -417,6 +486,71 @@ export default function Inbox() {
       setAiReason(error.message || 'Nao foi possivel gerar a sugestao.')
     } finally {
       setAiLoading(false)
+    }
+  }
+
+  const loadNextAction = async (convId) => {
+    if (!convId || !ws?.id || !can('perm_ai') || nextActionDismissed[convId]) {
+      setNextAction(null)
+      return
+    }
+
+    setNextActionLoading(true)
+    try {
+      const payload = await apiJson(`/workspaces/${ws.id}/ai-assist/conversations/${convId}/next-action`, { method: 'POST' })
+      if (!payload?.available || !payload?.action) {
+        setNextAction(null)
+        return
+      }
+      setNextAction({ conversationId: convId, ...payload })
+    } catch (error) {
+      setNextAction(null)
+    } finally {
+      setNextActionLoading(false)
+    }
+  }
+
+  const dismissNextAction = () => {
+    if (!activeId) return
+    setNextActionDismissed((prev) => ({ ...prev, [activeId]: true }))
+    setNextAction(null)
+  }
+
+  const handleNextAction = async () => {
+    if (!nextActionVisible) return
+    if (nextAction.action === 'use_suggestion') {
+      await generateAiSuggestion(activeId)
+      return
+    }
+    if (nextAction.action === 'follow_up') {
+      setInternalNote(true)
+      setInput('Follow-up: ')
+      inputRef.current?.focus()
+      return
+    }
+    if (nextAction.action === 'assign') {
+      setShowPanel(true)
+      await suggestRouting()
+      return
+    }
+    dismissNextAction()
+  }
+
+  const updateTriageTag = async (triageTag) => {
+    if (!activeId || !ws?.id || !canManageRouting) return
+    setTriageSaving(true)
+    try {
+      const payload = await apiJson(`/workspaces/${ws.id}/ai-assist/conversations/${activeId}/triage`, {
+        method: 'PATCH',
+        body: JSON.stringify({ triageTag }),
+      })
+      if (payload?.conversation) {
+        setConvs((prev) => prev.map((c) => (c.id === activeId ? { ...c, ...mapConvPartial(payload.conversation) } : c)))
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar triagem:', error)
+    } finally {
+      setTriageSaving(false)
     }
   }
 
@@ -564,6 +698,9 @@ export default function Inbox() {
       routing_confidence: Number(c.routing_confidence || 0.6),
       routing_reason: canViewRoutingReason ? (c.routing_reason || '') : '',
       routing_source: c.routing_source || 'fallback',
+      triage_tag: normalizeTriageTag(c.triage_tag),
+      sentiment: normalizeSentiment(c.sentiment),
+      sentiment_confidence: Number(c.sentiment_confidence || 0),
       ai_state: normalizeAiState(c.ai_state),
       escalated_at: c.escalated_at || null,
       escalated_by: c.escalated_by || null,
@@ -574,6 +711,7 @@ export default function Inbox() {
       contact_phone: c.contacts?.phone,
       contact_company: c.contacts?.company || '',
       contact_email: c.contacts?.email || '',
+      contact_is_vip: c.contacts?.is_vip === true,
       channel_id: c.channels?.id,
       channel_type: channelType,
       channel_name: getChannelDisplayName(channelType, c.channels?.name),
@@ -593,6 +731,9 @@ export default function Inbox() {
     routing_confidence: Number(c.routing_confidence || 0.6),
     routing_reason: canViewRoutingReason ? (c.routing_reason || '') : '',
     routing_source: c.routing_source || 'fallback',
+    triage_tag: normalizeTriageTag(c.triage_tag),
+    sentiment: normalizeSentiment(c.sentiment),
+    sentiment_confidence: Number(c.sentiment_confidence || 0),
     ai_state: normalizeAiState(c.ai_state),
     escalated_at: c.escalated_at || null,
     escalated_by: c.escalated_by || null,
@@ -602,9 +743,16 @@ export default function Inbox() {
 
   const mapMsg = (m) => ({
     id: m.id,
-    from: m.sender_type === 'client' ? 'client' : m.sender_type === 'bot' ? 'ai' : 'agent',
+    from: ['client', 'contact'].includes(m.sender_type) ? 'client' : ['bot', 'ai'].includes(m.sender_type) ? 'ai' : 'agent',
     text: m.content,
+    type: m.type || 'text',
+    mediaUrl: m.media_url || m.metadata?.media_url || m.metadata?.mediaUrl || null,
+    status: m.status || 'sent',
+    transcription: m.transcription || '',
+    transcriptionSummary: m.transcription_summary || '',
+    transcriptionStatus: m.transcription_status || null,
     time: fmtTime(m.created_at),
+    internalNote: m.is_internal_note === true,
     temp: false,
   })
 
@@ -681,7 +829,10 @@ export default function Inbox() {
 
               <div style={s.convInfo}>
                 <div style={s.convTopRow}>
-                  <span style={s.convName}>{c.contact_name}</span>
+                  <span style={s.convName}>
+                    {c.contact_is_vip ? <Star size={12} fill="var(--warning)" color="var(--warning)" aria-label="Cliente VIP" style={{ flexShrink: 0 }} /> : null}
+                    {c.contact_name}
+                  </span>
                   <span style={s.convTime}>{fmtTime(c.last_message_at)}</span>
                 </div>
                 <div style={s.convPreview}>{c.last_message || 'Sem mensagens'}</div>
@@ -696,6 +847,14 @@ export default function Inbox() {
                   <span style={{ ...s.queueTag, color: '#38bdf8', background: 'rgba(56,189,248,.16)' }}>
                     {ROUTING_QUEUE_LABELS[c.routing_queue]}
                   </span>
+                  <span style={{ ...s.queueTag, color: '#a78bfa', background: 'rgba(167,139,250,.16)' }}>
+                    {TRIAGE_LABELS[c.triage_tag]}
+                  </span>
+                  {c.sentiment !== 'normal' ? (
+                    <span style={{ ...s.queueTag, color: SENTIMENT_COLORS[c.sentiment] || '#f59e0b', background: `${SENTIMENT_COLORS[c.sentiment] || '#f59e0b'}18` }}>
+                      {SENTIMENT_LABELS[c.sentiment]}
+                    </span>
+                  ) : null}
                   {c.escalation_reason && c.escalation_reason !== 'none' ? (
                     <span style={{ ...s.queueTag, color: '#fca5a5', background: 'rgba(248,113,113,.18)' }}>
                       Escalonada
@@ -743,6 +902,14 @@ export default function Inbox() {
                 <span style={{ ...s.queueTag, color: '#fbbf24', background: 'rgba(251,191,36,.16)' }}>
                   {ROUTING_INTENT_LABELS[intentToShow]}
                 </span>
+                <span style={{ ...s.queueTag, color: '#a78bfa', background: 'rgba(167,139,250,.16)' }}>
+                  {TRIAGE_LABELS[activeConv.triage_tag]}
+                </span>
+                {activeConv.sentiment !== 'normal' ? (
+                  <span style={{ ...s.queueTag, color: SENTIMENT_COLORS[activeConv.sentiment] || '#f59e0b', background: `${SENTIMENT_COLORS[activeConv.sentiment] || '#f59e0b'}18` }}>
+                    {SENTIMENT_LABELS[activeConv.sentiment]}
+                  </span>
+                ) : null}
               </div>
             </div>
 
@@ -768,7 +935,7 @@ export default function Inbox() {
               </div>
             ) : (
               convMsgs.map((m, i) => {
-                const isOut = m.from === 'agent' || m.from === 'ai'
+                const isOut = m.internalNote || m.from === 'agent' || m.from === 'ai'
                 return (
                   <div key={m.id || i} className="fade-in" style={{ ...s.msgRow, ...(isOut ? s.msgRowOut : {}) }}>
                     {!isOut && (
@@ -777,18 +944,24 @@ export default function Inbox() {
                       </div>
                     )}
                     <div>
+                      {m.internalNote && <div style={s.internalNoteLabel}>Nota interna</div>}
                       {m.from === 'ai' && <div style={s.aiLabel}>IA</div>}
                       <div
                         style={{
                           ...s.bubble,
-                          ...(isOut ? (m.from === 'ai' ? s.bubbleAi : s.bubbleOut) : s.bubbleIn),
+                          ...(m.internalNote ? s.bubbleInternalNote : isOut ? (m.from === 'ai' ? s.bubbleAi : s.bubbleOut) : s.bubbleIn),
                           opacity: m.temp ? 0.65 : 1,
                         }}
                       >
-                        {m.text}
+                        {m.type === 'audio' && m.mediaUrl ? (
+                          <AudioMessage message={m} />
+                        ) : (
+                          m.text
+                        )}
                       </div>
                       <div style={{ ...s.msgTime, ...(isOut ? { textAlign: 'right' } : {}) }}>
-                        {m.time}{m.temp && ' - enviando...'}
+                        <span>{m.time}{m.temp && ' - enviando...'}</span>
+                        {m.from === 'agent' && !m.internalNote ? <MessageStatus status={m.status} /> : null}
                       </div>
                     </div>
                   </div>
@@ -802,7 +975,27 @@ export default function Inbox() {
             <div style={s.aiBar}>
               <span style={{ fontSize: 13, flexShrink: 0 }}>IA</span>
               <div style={{ flex: 1, fontSize: 12, color: 'var(--txt2)', lineHeight: 1.5 }}>
-                {aiLoading ? (
+                {nextActionLoading ? (
+                  <div style={s.nextActionChip}>
+                    <span>Buscando proxima acao...</span>
+                  </div>
+                ) : nextActionVisible ? (
+                  <div style={s.nextActionChip}>
+                    <div>
+                      <div style={{ fontWeight: 700, color: 'var(--txt1)' }}>{nextAction.label}</div>
+                      <div style={{ color: 'var(--txt3)' }}>{nextAction.description || nextAction.reason}</div>
+                    </div>
+                    {nextAction.action !== 'dismiss' ? (
+                      <button type="button" style={s.nextActionBtn} onClick={handleNextAction}>
+                        Aplicar
+                      </button>
+                    ) : null}
+                    <button type="button" style={s.nextActionBtnGhost} onClick={dismissNextAction}>
+                      Descartar
+                    </button>
+                  </div>
+                ) : null}
+                {nextActionVisible || nextActionLoading ? null : aiLoading ? (
                   <span style={{ color: 'var(--txt3)' }}>Gerando sugestao...</span>
                 ) : aiSug ? (
                   aiSug
@@ -831,7 +1024,11 @@ export default function Inbox() {
           <div style={s.inputRow}>
             <input
               ref={inputRef}
-              style={{ ...s.inputField, ...(composerLocked || activeConv.state === 'closed' ? { opacity: 0.5 } : {}) }}
+              style={{
+                ...s.inputField,
+                ...(internalNote ? s.inputFieldInternalNote : {}),
+                ...(composerLocked || activeConv.state === 'closed' ? { opacity: 0.5 } : {}),
+              }}
               placeholder={
                 !can('perm_reply')
                   ? 'Sem permissao para responder'
@@ -847,14 +1044,24 @@ export default function Inbox() {
               disabled={!canWriteReply || sending}
             />
             <button
-              style={{ ...s.sendBtn, opacity: sending || !input.trim() || !canWriteReply ? 0.5 : 1 }}
+              type="button"
+              style={{ ...s.noteToggle, ...(internalNote ? s.noteToggleActive : {}) }}
+              onClick={() => setInternalNote((current) => !current)}
+              disabled={!canWriteReply || sending}
+            >
+              Nota interna
+            </button>
+            <button
+              style={{ ...s.sendBtn, ...(internalNote ? s.sendBtnNote : {}), opacity: sending || !input.trim() || !canWriteReply ? 0.5 : 1 }}
               onClick={sendMessage}
               disabled={sending || !input.trim() || !canWriteReply}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
+              {internalNote ? 'Salvar nota' : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              )}
             </button>
           </div>
         </div>
@@ -891,6 +1098,8 @@ export default function Inbox() {
               ['Empresa', activeConv.contact_company || '-'],
               ['Prioridade', PRI_LABELS[activeConv.priority] || '-'],
               ['Estado', STATE_LABELS[activeConv.state] || '-'],
+              ['Triagem', TRIAGE_LABELS[activeConv.triage_tag] || '-'],
+              ['Sentimento', SENTIMENT_LABELS[activeConv.sentiment] || '-'],
               ['Responsavel', activeConv.assigned_to ? (activeAssignee?.name || 'Atribuido') : 'Sem dono'],
               ['Presenca', activeAssignee ? (activeAssignee.is_online ? 'Online' : 'Offline') : `${onlineAgents} online`],
             ].map(([k, v]) => (
@@ -930,6 +1139,18 @@ export default function Inbox() {
             ) : null}
             {routingError ? <div style={s.routingError}>{routingError}</div> : null}
             <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+              {canManageRouting ? (
+                <select
+                  style={s.panelSelect}
+                  value={activeConv.triage_tag || 'outros'}
+                  onChange={(event) => updateTriageTag(event.target.value)}
+                  disabled={triageSaving}
+                >
+                  {Object.entries(TRIAGE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              ) : null}
               <button
                 style={s.panelActionBtn}
                 onClick={suggestRouting}
@@ -1060,6 +1281,66 @@ export default function Inbox() {
   )
 }
 
+function MessageStatus({ status }) {
+  if (status === 'failed') {
+    return (
+      <span style={{ ...s.messageStatus, color: 'var(--danger)' }}>
+        <AlertCircle size={12} aria-hidden />
+        Nao enviado
+      </span>
+    )
+  }
+
+  if (status === 'read') {
+    return (
+      <span style={{ ...s.messageStatus, color: '#22D3EE' }}>
+        <CheckCheck size={12} aria-hidden />
+      </span>
+    )
+  }
+
+  if (status === 'delivered') {
+    return (
+      <span style={s.messageStatus}>
+        <CheckCheck size={12} aria-hidden />
+      </span>
+    )
+  }
+
+  return (
+    <span style={s.messageStatus}>
+      <Check size={12} aria-hidden />
+    </span>
+  )
+}
+
+function AudioMessage({ message }) {
+  return (
+    <div>
+      <audio controls src={message.mediaUrl} style={s.audioPlayer} />
+      {message.transcriptionStatus === 'pending' ? (
+        <div style={s.transcriptionState}>
+          <Loader2 size={12} style={s.spinIcon} aria-hidden />
+          Transcrevendo...
+        </div>
+      ) : null}
+      {message.transcriptionStatus === 'done' && message.transcription ? (
+        <div>
+          {message.transcriptionSummary ? (
+            <div style={s.transcriptionSummary}>
+              Resumo: {message.transcriptionSummary}
+            </div>
+          ) : null}
+          <p style={s.transcriptionText}>{message.transcription}</p>
+        </div>
+      ) : null}
+      {message.transcriptionStatus === 'failed' ? (
+        <div style={s.transcriptionFailed}>Áudio não pôde ser transcrito</div>
+      ) : null}
+    </div>
+  )
+}
+
 const s = {
   root: {
     display: 'flex', height: '100%', overflow: 'hidden',
@@ -1164,11 +1445,52 @@ const s = {
     fontSize: 8, fontWeight: 700, color: '#fff',
   },
   aiLabel: { fontSize: 8.5, fontWeight: 700, color: '#22d3ee', letterSpacing: '.08em', marginBottom: 3, textAlign: 'right' },
+  internalNoteLabel: { fontSize: 10, fontWeight: 700, color: 'var(--txt3)', marginBottom: 4, textAlign: 'right' },
   bubble: { padding: '8px 12px', borderRadius: 13, fontSize: 13, lineHeight: 1.55, maxWidth: 340, wordBreak: 'break-word' },
   bubbleIn: { background: 'rgba(255,255,255,.07)', color: 'var(--txt2, #a89fc4)', borderBottomLeftRadius: 3 },
   bubbleOut: { background: '#7c3aed', color: '#fff', borderBottomRightRadius: 3, boxShadow: '0 2px 10px rgba(124,58,237,.3)' },
   bubbleAi: { background: 'linear-gradient(135deg,rgba(34,211,238,.1),rgba(124,58,237,.08))', border: '1px solid rgba(34,211,238,.2)', color: 'var(--txt1, #f5f3ff)', borderBottomRightRadius: 3 },
+  bubbleInternalNote: { background: 'color-mix(in srgb, #F59E0B 15%, transparent)', borderLeft: '3px solid #F59E0B', color: 'var(--txt1, #f5f3ff)', borderBottomRightRadius: 3 },
+  audioPlayer: { width: 220, height: 36, accentColor: 'var(--pri)' },
+  transcriptionState: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 6,
+    fontSize: 11,
+    color: 'var(--txt3)',
+  },
+  transcriptionSummary: {
+    marginTop: 6,
+    fontSize: 11,
+    color: 'var(--txt3)',
+    fontStyle: 'italic',
+    lineHeight: 1.45,
+  },
+  transcriptionText: {
+    margin: '6px 0 0',
+    fontSize: 12,
+    color: 'var(--txt2)',
+    lineHeight: 1.5,
+  },
+  transcriptionFailed: {
+    marginTop: 6,
+    fontSize: 11,
+    color: 'var(--txt3)',
+  },
+  spinIcon: {
+    animation: 'spin 0.8s linear infinite',
+  },
   msgTime: { fontSize: 9.5, color: 'var(--txt4, #352f50)', marginTop: 2 },
+  messageStatus: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 3,
+    marginLeft: 6,
+    color: 'var(--txt3)',
+    verticalAlign: 'middle',
+  },
   aiBar: {
     margin: '0 12px 8px', padding: '8px 11px', borderRadius: 9,
     border: '1px solid rgba(124,58,237,.25)',
@@ -1179,6 +1501,41 @@ const s = {
     fontSize: 10, color: '#7c3aed', background: 'rgba(124,58,237,.14)',
     border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer',
     fontFamily: 'inherit', fontWeight: 600, flexShrink: 0, transition: 'all .15s',
+  },
+  nextActionChip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    justifyContent: 'space-between',
+    border: '1px solid rgba(34,211,238,.22)',
+    background: 'rgba(34,211,238,.06)',
+    borderRadius: 8,
+    padding: '7px 8px',
+    marginBottom: 6,
+  },
+  nextActionBtn: {
+    fontSize: 10,
+    color: '#67e8f9',
+    background: 'rgba(34,211,238,.14)',
+    border: '1px solid rgba(34,211,238,.26)',
+    borderRadius: 6,
+    padding: '3px 8px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontWeight: 700,
+    flexShrink: 0,
+  },
+  nextActionBtnGhost: {
+    fontSize: 10,
+    color: 'var(--txt3)',
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,.08)',
+    borderRadius: 6,
+    padding: '3px 8px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontWeight: 600,
+    flexShrink: 0,
   },
   inputRow: {
     display: 'flex', gap: 8, padding: '10px 12px', flexShrink: 0,
@@ -1191,10 +1548,37 @@ const s = {
     borderRadius: 9, padding: '9px 12px', color: 'var(--txt1, #f5f3ff)',
     fontSize: 13, outline: 'none', fontFamily: 'inherit', transition: 'border-color .2s',
   },
+  inputFieldInternalNote: {
+    background: 'rgba(245,158,11,0.06)',
+    borderColor: 'rgba(245,158,11,.35)',
+  },
+  noteToggle: {
+    border: '1px solid rgba(255,255,255,.08)',
+    background: 'rgba(255,255,255,.04)',
+    color: 'var(--txt2)',
+    borderRadius: 999,
+    padding: '0 12px',
+    fontSize: 11,
+    fontWeight: 700,
+    fontFamily: 'inherit',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+  noteToggleActive: {
+    background: 'rgba(245,158,11,.2)',
+    borderColor: 'rgba(245,158,11,.4)',
+    color: '#F59E0B',
+  },
   sendBtn: {
     width: 36, height: 36, borderRadius: 9, background: '#7c3aed', border: 'none',
     cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0, transition: 'all .18s',
+    flexShrink: 0, transition: 'all .18s', color: '#fff', fontFamily: 'inherit', fontSize: 11, fontWeight: 800,
+  },
+  sendBtnNote: {
+    width: 'auto',
+    minWidth: 86,
+    padding: '0 12px',
+    background: '#F59E0B',
   },
   panel: {
     width: 230, flexShrink: 0,

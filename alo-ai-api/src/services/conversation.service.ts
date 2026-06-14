@@ -5,7 +5,7 @@ import { SupabaseService } from './supabase.service'
 const ALLOWED_STATES = new Set(['new', 'open', 'ai_handling', 'human_handling', 'waiting_customer', 'closed'])
 const ALLOWED_ESCALATION_REASONS = new Set(['none', 'sensitive', 'unresolved', 'high_value', 'out_of_hours', 'other'])
 const PRIVILEGED_ROLES = new Set(['owner', 'admin', 'supervisor'])
-const CONVERSATION_SELECT = 'id, workspace_id, state, status, priority, assigned_to, assigned_by, unread_count, last_message, last_message_at, routing_queue, routing_intent, routing_confidence, routing_reason, routing_source, ai_state, escalated_at, escalated_by, escalation_reason, escalation_note'
+const CONVERSATION_SELECT = 'id, workspace_id, state, status, priority, assigned_to, assigned_by, unread_count, first_response_at, last_message, last_message_at, routing_queue, routing_intent, routing_confidence, routing_reason, routing_source, ai_state, escalated_at, escalated_by, escalation_reason, escalation_note'
 
 function normalizeChannelType(type: string) {
   const normalized = String(type || '').trim().toLowerCase()
@@ -47,6 +47,7 @@ export class ConversationService {
     userId: string
     role: string
     text: string
+    isInternalNote?: boolean
   }) {
     const conversation: any = await this.loadConversation(input.workspaceId, input.conversationId)
     if (!conversation) throw new NotFoundException('Conversa nao encontrada.')
@@ -58,6 +59,7 @@ export class ConversationService {
     }
 
     const channelType = normalizeChannelType(conversation.channels?.type)
+    const isInternalNote = input.isInternalNote === true
     const payload: any = {
       workspace_id: input.workspaceId,
       company_id: input.workspaceId,
@@ -67,6 +69,7 @@ export class ConversationService {
       direction: 'outbound',
       channel_type: channelType || null,
       content: input.text,
+      is_internal_note: isInternalNote,
       metadata: {
         source: 'conversation-controller',
         actor_id: input.userId,
@@ -74,7 +77,7 @@ export class ConversationService {
     }
 
     let externalMessageId: string | null = null
-    if (channelType === 'whatsapp') {
+    if (!isInternalNote && channelType === 'whatsapp') {
       const phone = conversation.contacts?.phone
       const instance = conversation.channels?.config?.instance
       if (!phone || !instance) {
@@ -99,33 +102,51 @@ export class ConversationService {
       }
       if (externalMessageId) {
         payload.external_message_id = externalMessageId
+        payload.channel_message_id = externalMessageId
       }
     }
 
     const { error: insertError, data: insertedMessage } = await this.supabase.admin
       .from('messages')
       .insert(payload)
-      .select('id, workspace_id, conversation_id, sender_type, direction, channel_type, external_message_id, content, metadata, created_at')
+      .select('id, workspace_id, conversation_id, sender_type, direction, channel_type, external_message_id, channel_message_id, type, media_url, content, status, is_internal_note, transcription, transcription_summary, transcription_status, metadata, created_at')
       .single()
 
     if (insertError) {
       throw new InternalServerErrorException(insertError.message)
     }
 
-    const { error: conversationError, data: updatedConversation } = await this.supabase.admin
-      .from('conversations')
-      .update({
-        last_message: input.text,
-        last_message_at: new Date().toISOString(),
-        unread_count: 0,
-      })
-      .eq('workspace_id', input.workspaceId)
-      .eq('id', input.conversationId)
-      .select(CONVERSATION_SELECT)
-      .single()
+    if (!isInternalNote && !conversation.first_response_at) {
+      const firstResponse = await this.supabase.admin
+        .from('conversations')
+        .update({ first_response_at: new Date().toISOString() })
+        .eq('workspace_id', input.workspaceId)
+        .eq('id', input.conversationId)
+        .is('first_response_at', null)
 
-    if (conversationError) {
-      throw new InternalServerErrorException(conversationError.message)
+      if (firstResponse.error) {
+        throw new InternalServerErrorException(firstResponse.error.message)
+      }
+    }
+
+    let updatedConversation = conversation
+    if (!isInternalNote) {
+      const { error: conversationError, data } = await this.supabase.admin
+        .from('conversations')
+        .update({
+          last_message: input.text,
+          last_message_at: new Date().toISOString(),
+          unread_count: 0,
+        })
+        .eq('workspace_id', input.workspaceId)
+        .eq('id', input.conversationId)
+        .select(CONVERSATION_SELECT)
+        .single()
+
+      if (conversationError) {
+        throw new InternalServerErrorException(conversationError.message)
+      }
+      updatedConversation = data
     }
 
     return {
@@ -152,6 +173,28 @@ export class ConversationService {
 
     if (error) throw new InternalServerErrorException(error.message)
     return { conversation: data }
+  }
+
+  async listConversationMessages(input: {
+    workspaceId: string
+    conversationId: string
+    includeInternalNotes: boolean
+  }) {
+    let query = this.supabase.admin
+      .from('messages')
+      .select('id, workspace_id, conversation_id, sender_id, sender_type, direction, channel_type, external_message_id, channel_message_id, type, media_url, content, status, is_internal_note, transcription, transcription_summary, transcription_status, metadata, created_at')
+      .eq('workspace_id', input.workspaceId)
+      .eq('conversation_id', input.conversationId)
+      .order('created_at', { ascending: true })
+      .limit(100)
+
+    if (!input.includeInternalNotes) {
+      query = query.eq('is_internal_note', false)
+    }
+
+    const { data, error } = await query
+    if (error) throw new InternalServerErrorException(error.message)
+    return { messages: data || [] }
   }
 
   async assignConversation(input: {
@@ -493,7 +536,7 @@ export class ConversationService {
     const { data, error } = await this.supabase.admin
       .from('conversations')
       .select(`
-        id, workspace_id, state, status, priority, assigned_to, assigned_by, unread_count, routing_queue, routing_intent, routing_confidence, routing_reason, routing_source, ai_state, escalated_at, escalated_by, escalation_reason, escalation_note,
+        id, workspace_id, state, status, priority, assigned_to, assigned_by, unread_count, first_response_at, routing_queue, routing_intent, routing_confidence, routing_reason, routing_source, ai_state, escalated_at, escalated_by, escalation_reason, escalation_note,
         contacts ( id, name, phone, email, company ),
         channels ( id, type, name, config )
       `)

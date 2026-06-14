@@ -52,7 +52,7 @@ export class ProvisioningService {
   async listWorkspaces() {
     const workspacesRes = await this.supabase.admin
       .from('workspaces')
-      .select('id, company_name, name, slug, plan, ai_enabled, created_by, created_at')
+      .select('id, company_name, name, slug, logo_url, plan, ai_enabled, created_by, created_at')
       .order('created_at', { ascending: true })
 
     if (!workspacesRes.error) {
@@ -144,6 +144,7 @@ export class ProvisioningService {
       name,
       company_name: item.company_name || item.name || name,
       slug: item.slug || null,
+      logo_url: item.logo_url || null,
       plan: item.plan || null,
       ai_enabled: Boolean(item.ai_enabled),
       created_by: item.created_by || null,
@@ -172,7 +173,7 @@ export class ProvisioningService {
     const res = await this.supabase.admin
       .from('workspaces')
       .insert(payload)
-      .select('id, company_name, name, slug, plan, ai_enabled, created_by, created_at')
+      .select('id, company_name, name, slug, logo_url, plan, ai_enabled, created_by, created_at')
       .single()
 
     if (!res.error && res.data?.id) return this.normalizeWorkspace(res.data)

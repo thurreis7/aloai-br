@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
-import { Lock, Palette, Shield, UserRound } from 'lucide-react'
+import { ClipboardList, Lock, Palette, Shield, UserRound } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { usePermissions } from '../hooks/usePermissions'
 import { supabase } from '../lib/supabase'
@@ -12,7 +12,9 @@ export default function Settings() {
   const outlet = useOutletContext() || {}
   const [colorPreset, setColorPreset] = useState(() => localStorage.getItem('alo-theme-accent') || 'padrao')
   const [profileName, setProfileName] = useState('')
-  const [workspaceForm, setWorkspaceForm] = useState({ name: '', slug: '', plan: 'starter', ai_enabled: false })
+  const [workspaceForm, setWorkspaceForm] = useState({ name: '', slug: '', logo_url: '', plan: 'starter', ai_enabled: false })
+  const [auditLogs, setAuditLogs] = useState([])
+  const [loadingAudit, setLoadingAudit] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingWorkspace, setSavingWorkspace] = useState(false)
   const [message, setMessage] = useState('')
@@ -29,10 +31,41 @@ export default function Settings() {
     setWorkspaceForm({
       name: ws?.name || '',
       slug: ws?.slug || '',
+      logo_url: ws?.logo_url || '',
       plan: ws?.plan || 'starter',
       ai_enabled: Boolean(ws?.ai_enabled),
     })
   }, [ws])
+
+  useEffect(() => {
+    let ignore = false
+    async function loadAuditLogs() {
+      if (!ws?.id || !(isOwner || ['owner', 'admin'].includes(wsRole?.role))) {
+        setAuditLogs([])
+        return
+      }
+
+      setLoadingAudit(true)
+      try {
+        const { data, error } = await supabase
+          .from('audit_logs')
+          .select('id, action, resource, resource_id, metadata, created_at')
+          .eq('workspace_id', ws.id)
+          .order('created_at', { ascending: false })
+          .limit(30)
+
+        if (error) throw error
+        if (!ignore) setAuditLogs(data || [])
+      } catch {
+        if (!ignore) setAuditLogs([])
+      } finally {
+        if (!ignore) setLoadingAudit(false)
+      }
+    }
+
+    loadAuditLogs()
+    return () => { ignore = true }
+  }, [ws?.id, isOwner, wsRole?.role])
 
   async function saveProfile() {
     if (!user) return
@@ -156,6 +189,16 @@ export default function Settings() {
             <input className="workspace-input" value={workspaceForm.slug} onChange={(event) => setWorkspaceForm((current) => ({ ...current, slug: event.target.value }))} disabled={!(isOwner || can('perm_integrations'))} />
           </label>
           <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+            <span style={{ color: 'var(--txt4)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em' }}>Logo URL</span>
+            <input className="workspace-input" value={workspaceForm.logo_url} onChange={(event) => setWorkspaceForm((current) => ({ ...current, logo_url: event.target.value }))} placeholder="https://..." disabled={!(isOwner || can('perm_integrations'))} />
+          </label>
+          {workspaceForm.logo_url ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <img src={workspaceForm.logo_url} alt="Logo do workspace" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', background: 'rgba(255,255,255,.06)' }} />
+              <span style={{ color: 'var(--txt3)', fontSize: 12 }}>Previa da marca exibida para operadores.</span>
+            </div>
+          ) : null}
+          <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
             <span style={{ color: 'var(--txt4)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em' }}>Plano</span>
             <select className="workspace-select" value={workspaceForm.plan} onChange={(event) => setWorkspaceForm((current) => ({ ...current, plan: event.target.value }))} disabled={!(isOwner || can('perm_integrations'))}>
               <option value="starter">starter</option>
@@ -185,6 +228,32 @@ export default function Settings() {
             </Link>
           ) : null}
         </GlassCard>
+
+        {(isOwner || ['owner', 'admin'].includes(wsRole?.role)) ? (
+          <GlassCard style={{ padding: 22 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14 }}>
+              <ClipboardList size={18} color="var(--pri-l)" />
+              <strong>Auditoria</strong>
+            </div>
+            {loadingAudit ? (
+              <InfoRow label="Eventos" value="Carregando logs..." />
+            ) : auditLogs.length ? (
+              <div style={{ display: 'grid', gap: 10 }}>
+                {auditLogs.map((log) => (
+                  <div key={log.id} style={{ padding: 10, borderRadius: 10, border: '1px solid rgba(255,255,255,.08)', background: 'rgba(255,255,255,.03)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                      <strong style={{ color: 'var(--txt2)', fontSize: 13 }}>{log.action}</strong>
+                      <span style={{ color: 'var(--txt4)', fontSize: 11 }}>{log.created_at ? new Date(log.created_at).toLocaleString('pt-BR') : '-'}</span>
+                    </div>
+                    <div style={{ color: 'var(--txt3)', fontSize: 12, marginTop: 4 }}>{log.resource || 'recurso'} {log.resource_id ? `#${String(log.resource_id).slice(0, 8)}` : ''}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <InfoRow label="Eventos" value="Nenhum log encontrado para este workspace." />
+            )}
+          </GlassCard>
+        ) : null}
       </div>
 
       {message ? <div style={{ color: 'var(--txt2)' }}>{message}</div> : null}

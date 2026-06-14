@@ -132,6 +132,14 @@ function AppWithTheme() {
         </PrivateRoute>
       } />
 
+      <Route path="/inbox/:conversationId" element={
+        <PrivateRoute>
+          <PermissionsProvider>
+            <PermissionRoute permission="perm_channels_view" title="Inbox indisponivel" description="Seu perfil nao pode acessar as conversas agora."><Inbox /></PermissionRoute>
+          </PermissionsProvider>
+        </PrivateRoute>
+      } />
+
       <Route path="/app" element={
         <PrivateRoute>
           <PermissionsProvider>

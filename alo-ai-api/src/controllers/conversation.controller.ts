@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Patch, Post, BadRequestException, ForbiddenException } from '@nestjs/common'
+import { Body, Controller, Get, Headers, Param, Patch, Post, Query, BadRequestException, ForbiddenException } from '@nestjs/common'
 import { AccessService } from '../services/access.service'
 import { ConversationService } from '../services/conversation.service'
 
@@ -19,7 +19,7 @@ export class ConversationController {
     @Headers('authorization') authorization: string | undefined,
     @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
-    @Body() body: { text?: string },
+    @Body() body: { text?: string; is_internal_note?: boolean },
   ) {
     this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
     const context = await this.accessService.resolveRequestContext(authorization)
@@ -34,6 +34,25 @@ export class ConversationController {
       userId: context.user.id,
       role: context.role,
       text,
+      isInternalNote: body?.is_internal_note === true,
+    })
+  }
+
+  @Get('/:conversationId/messages')
+  async listMessages(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('workspaceId') workspaceId: string,
+    @Param('conversationId') conversationId: string,
+    @Query('notes') notes?: string,
+  ) {
+    this.assertWorkspaceAndConversationIds(workspaceId, conversationId)
+    const context = await this.accessService.resolveRequestContext(authorization)
+    await this.accessService.assertWorkspaceAccess(context, workspaceId)
+
+    return this.conversationService.listConversationMessages({
+      workspaceId,
+      conversationId,
+      includeInternalNotes: String(notes || '').toLowerCase() !== 'false',
     })
   }
 
