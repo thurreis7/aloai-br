@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
-import { ClipboardList, Lock, Palette, Shield, UserRound } from 'lucide-react'
+import { Bot, ClipboardList, Lock, Palette, Shield, UserRound } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { usePermissions } from '../hooks/usePermissions'
 import { supabase } from '../lib/supabase'
+import { apiJson } from '../lib/api'
 import { GlassCard, PageHeader, PageShell, StatusPill } from '../components/app/WorkspaceUI'
 
 export default function Settings() {
@@ -13,11 +14,15 @@ export default function Settings() {
   const [colorPreset, setColorPreset] = useState(() => localStorage.getItem('alo-theme-accent') || 'padrao')
   const [profileName, setProfileName] = useState('')
   const [workspaceForm, setWorkspaceForm] = useState({ name: '', slug: '', logo_url: '', plan: 'starter', ai_enabled: false })
+  const [aiConfig, setAiConfig] = useState({ script_template: '' })
   const [auditLogs, setAuditLogs] = useState([])
   const [loadingAudit, setLoadingAudit] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingWorkspace, setSavingWorkspace] = useState(false)
+  const [savingAiConfig, setSavingAiConfig] = useState(false)
+  const [loadingAiConfig, setLoadingAiConfig] = useState(false)
   const [message, setMessage] = useState('')
+  const canManageAiConfig = Boolean(ws?.id && (isOwner || ['owner', 'admin'].includes(wsRole?.role)))
 
   useEffect(() => {
     localStorage.setItem('alo-theme-accent', colorPreset)
@@ -36,6 +41,34 @@ export default function Settings() {
       ai_enabled: Boolean(ws?.ai_enabled),
     })
   }, [ws])
+
+  useEffect(() => {
+    let ignore = false
+    async function loadAiConfig() {
+      if (!canManageAiConfig) {
+        setAiConfig({ script_template: '' })
+        return
+      }
+
+      setLoadingAiConfig(true)
+      try {
+        const payload = await apiJson('/workspace/ai-config')
+        const config = payload?.config || payload || {}
+        if (!ignore) {
+          setAiConfig({
+            script_template: String(config.script_template ?? config.scriptTemplate ?? '').slice(0, 2000),
+          })
+        }
+      } catch {
+        if (!ignore) setAiConfig({ script_template: '' })
+      } finally {
+        if (!ignore) setLoadingAiConfig(false)
+      }
+    }
+
+    loadAiConfig()
+    return () => { ignore = true }
+  }, [canManageAiConfig])
 
   useEffect(() => {
     let ignore = false
@@ -116,6 +149,27 @@ export default function Settings() {
     }
   }
 
+  async function saveAiConfig() {
+    if (!canManageAiConfig) return
+    setSavingAiConfig(true)
+    setMessage('')
+    try {
+      const payload = await apiJson('/workspace/ai-config', {
+        method: 'PATCH',
+        body: JSON.stringify({ script_template: aiConfig.script_template }),
+      })
+      const config = payload?.config || payload || {}
+      setAiConfig({
+        script_template: String(config.script_template ?? config.scriptTemplate ?? aiConfig.script_template).slice(0, 2000),
+      })
+      setMessage('Script de abordagem salvo com sucesso.')
+    } catch (err) {
+      setMessage(err.message || 'Nao foi possivel salvar o script de abordagem.')
+    } finally {
+      setSavingAiConfig(false)
+    }
+  }
+
   return (
     <PageShell>
       <PageHeader
@@ -151,6 +205,40 @@ export default function Settings() {
             {savingProfile ? 'Salvando...' : 'Salvar perfil'}
           </button>
         </GlassCard>
+
+        {canManageAiConfig ? (
+          <GlassCard style={{ padding: 22 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14 }}>
+              <Bot size={18} color="var(--info)" />
+              <strong>IA</strong>
+            </div>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: 'var(--txt4)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em' }}>Script de Abordagem</span>
+              <textarea
+                className="workspace-input"
+                rows={6}
+                maxLength={2000}
+                value={aiConfig.script_template}
+                onChange={(event) => setAiConfig({ script_template: event.target.value.slice(0, 2000) })}
+                disabled={loadingAiConfig || savingAiConfig}
+                placeholder="Cole o roteiro esperado para atendimento e vendas."
+                style={{ resize: 'vertical', minHeight: 132 }}
+              />
+            </label>
+            <div style={{ color: 'var(--txt4)', fontSize: 12, marginTop: 8 }}>
+              {aiConfig.script_template.length}/2000 caracteres
+            </div>
+            <button
+              type="button"
+              className="workspace-button workspace-button--secondary"
+              style={{ display: 'inline-flex', marginTop: 14 }}
+              onClick={saveAiConfig}
+              disabled={loadingAiConfig || savingAiConfig}
+            >
+              {savingAiConfig ? 'Salvando...' : 'Salvar script'}
+            </button>
+          </GlassCard>
+        ) : null}
 
         <GlassCard style={{ padding: 22 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14 }}>

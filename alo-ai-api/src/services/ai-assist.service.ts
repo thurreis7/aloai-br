@@ -59,7 +59,7 @@ export class AiAssistService {
     const { data, error } = await this.supabase.admin
       .from('ai_workspace_configs')
       .upsert(payload, { onConflict: 'workspace_id' })
-      .select('id, workspace_id, enabled, auto_reply_enabled, confidence_threshold, tone, workspace_context, faq_rules, knowledge_files, channel_policy, schedule_policy, created_at, updated_at')
+      .select('id, workspace_id, enabled, auto_reply_enabled, confidence_threshold, tone, workspace_context, faq_rules, knowledge_files, channel_policy, schedule_policy, script_template, created_at, updated_at')
       .single()
 
     if (error) throw new InternalServerErrorException(error.message)

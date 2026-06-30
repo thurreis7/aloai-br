@@ -1679,10 +1679,144 @@ Supabase connection string format: `postgresql://postgres:[password]@db.[ref].su
 - [ ] Channel management
 - [ ] Audit log viewer (admin only)
 
+### M08 — Sales Intelligence
+- [ ] Evaluation report generated on conversation close (if ai_enabled)
+- [ ] Quality score visible to Supervisor/Admin in conversation view
+- [ ] Dashboard shows average quality score last 30 days
+- [ ] Script template configurable in Settings → IA
+- [ ] Response cadence metric in agent performance table
+
 ### Security
 - [ ] No cross-workspace data access (validated via RLS test)
 - [ ] Sensitive API keys not exposed in frontend
 - [ ] JWT required on all API routes except webhooks/health
+
+## M08 — Sales Intelligence Layer
+
+**Purpose:** Provide managers and owners with AI-generated evaluative analysis
+of team conversations — without manual auditing. Implements the RAT framework
+(Registra, Analisa, Toma Decisão) as an automated operational layer.
+
+**V1 scope (ships with core product):**
+- Conversation quality score per closed conversation
+- Script compliance check (if workspace has script configured)
+- Evaluative report surfaced in conversation detail view
+
+**V2 scope (deferred):**
+- Aggregate training topic suggestions across N conversations
+- Objection pattern analysis
+- Funnel conversion gap detection
+
+---
+
+### M08.1 — Workspace Script Configuration
+
+**Purpose:** Admin registers the expected sales/support script or approach.
+AI uses this as evaluation baseline.
+
+**Where:** Settings → IA → "Script de Abordagem" (textarea, max 2000 chars)
+**Storage:** `ai_workspace_configs.script_template` (text, nullable)
+**Injection:** Appended to AI system prompt when generating evaluations.
+
+---
+
+### M08.2 — Conversation Evaluative Report
+
+**Purpose:** After a conversation is closed, AI generates a structured
+evaluation report visible to supervisors and admins.
+
+**Trigger:** conversation.status changes to 'closed'
+**Execution:** Background async call — never blocks close action
+**Condition:** Only runs if workspace.ai_enabled = true
+
+**Inputs:**
+- Full conversation message history (all messages, sender_type = contact | agent)
+- Contact profile (name, company, tags)
+- Workspace script_template (if configured)
+- Workspace system prompt
+
+**AI call:** claude-haiku-4-5-20251001
+**Output structure (JSON, stored in conversations.evaluation JSONB):**
+```json
+{
+  "quality_score": 8,
+  "quality_label": "Bom",
+  "script_compliance": true,
+  "script_compliance_note": "Agente seguiu abertura e levantamento de necessidade.",
+  "response_cadence": "Adequado",
+  "strengths": ["Cordialidade", "Identificou necessidade rapidamente"],
+  "gaps": ["Não enviou proposta no timing certo"],
+  "recommendation": "Reforçar etapa de fechamento com pergunta direta.",
+  "evaluated_at": "2026-06-14T21:00:00Z"
+}
+```
+
+**Score scale:** 1–10
+**Labels:** 1–4 = Ruim | 5–6 = Regular | 7–8 = Bom | 9–10 = Excelente
+
+**Failure:** If AI call fails, evaluation is skipped silently.
+conversations.evaluation remains null. No retry in v1.
+
+---
+
+### M08.3 — Evaluation UI
+
+**Surfaces:**
+1. Conversation detail view (Inbox) — collapsed card below thread,
+   visible to Supervisor and Admin only.
+   Shows: score badge, compliance indicator, gaps list, recommendation.
+
+2. Dashboard (M06) — new card "Qualidade Média de Atendimento":
+   average quality_score across closed conversations (last 30 days).
+   Filterable by agent.
+
+**Access:** Supervisor + Admin only. Agents do not see their own scores in v1.
+
+---
+
+### M08.4 — Response Cadence Metric
+
+**Purpose:** Track average time between customer message and agent reply,
+per conversation and per agent. Distinct from first_response_at.
+
+**Implementation:** Query-based. No new columns needed.
+
+```sql
+SELECT
+  assigned_to,
+  AVG(
+    EXTRACT(EPOCH FROM (agent_msg.created_at - contact_msg.created_at))
+  ) / 60 AS avg_response_minutes
+FROM messages contact_msg
+JOIN messages agent_msg
+  ON agent_msg.conversation_id = contact_msg.conversation_id
+  AND agent_msg.sender_type = 'agent'
+  AND agent_msg.created_at > contact_msg.created_at
+WHERE contact_msg.sender_type = 'contact'
+  AND contact_msg.workspace_id = $workspace_id
+GROUP BY assigned_to;
+```
+
+**Surface:** Dashboard M06 — agent performance table gains
+"Tempo médio de resposta" column.
+
+---
+
+### M08.5 — DB changes
+
+```sql
+-- On conversations table
+ALTER TABLE conversations
+  ADD COLUMN IF NOT EXISTS evaluation JSONB,
+  ADD COLUMN IF NOT EXISTS evaluated_at TIMESTAMPTZ;
+
+-- On ai_workspace_configs table
+ALTER TABLE ai_workspace_configs
+  ADD COLUMN IF NOT EXISTS script_template TEXT;
+```
+
+**Ref:** ALOAI-v1-spec.md Section 6 (Domain Model),
+Section 10 (AI System Layer), Section 18 (Acceptance Criteria)
 
 ## Section 18 Evidence Matrix
 

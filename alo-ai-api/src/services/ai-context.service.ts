@@ -196,6 +196,8 @@ export class AiContextService {
       knowledgeFiles: [],
       channelPolicy: { ...DEFAULT_CHANNEL_POLICY },
       schedulePolicy: { ...DEFAULT_SCHEDULE_POLICY },
+      scriptTemplate: '',
+      script_template: '',
     }
   }
 
@@ -214,6 +216,8 @@ export class AiContextService {
       knowledgeFiles: normalizeKnowledgeFiles(row.knowledge_files),
       channelPolicy: normalizeChannelPolicy(row.channel_policy),
       schedulePolicy: normalizeSchedulePolicy(row.schedule_policy),
+      scriptTemplate: String(row.script_template || ''),
+      script_template: String(row.script_template || ''),
       updatedAt: row.updated_at || null,
       createdAt: row.created_at || null,
     }
@@ -226,6 +230,7 @@ export class AiContextService {
     const knowledgeFiles = patch?.knowledgeFiles || patch?.knowledge_files
     const channelPolicy = patch?.channelPolicy || patch?.channel_policy
     const schedulePolicy = patch?.schedulePolicy || patch?.schedule_policy
+    const scriptTemplate = patch?.scriptTemplate ?? patch?.script_template
 
     return {
       workspace_id: workspaceId,
@@ -247,13 +252,16 @@ export class AiContextService {
       schedule_policy: schedulePolicy === undefined && patch?.schedule === undefined
         ? base.schedulePolicy
         : normalizeSchedulePolicy(schedulePolicy, patch?.schedule),
+      script_template: scriptTemplate === undefined
+        ? base.scriptTemplate
+        : String(scriptTemplate || '').slice(0, 2000),
     }
   }
 
   async loadWorkspaceConfigRow(workspaceId: string) {
     const { data, error } = await this.supabase.admin
       .from('ai_workspace_configs')
-      .select('id, workspace_id, enabled, auto_reply_enabled, confidence_threshold, tone, workspace_context, faq_rules, knowledge_files, channel_policy, schedule_policy, created_at, updated_at')
+      .select('id, workspace_id, enabled, auto_reply_enabled, confidence_threshold, tone, workspace_context, faq_rules, knowledge_files, channel_policy, schedule_policy, script_template, created_at, updated_at')
       .eq('workspace_id', workspaceId)
       .maybeSingle()
 

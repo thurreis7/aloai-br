@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common'
 import { MessagingService } from './messaging.service'
 import { SupabaseService } from './supabase.service'
+import { EvaluationService } from './evaluation.service'
 
 const ALLOWED_STATES = new Set(['new', 'open', 'ai_handling', 'human_handling', 'waiting_customer', 'closed'])
 const ALLOWED_ESCALATION_REASONS = new Set(['none', 'sensitive', 'unresolved', 'high_value', 'out_of_hours', 'other'])
@@ -39,6 +40,7 @@ export class ConversationService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly messagingService: MessagingService,
+    private readonly evaluationService: EvaluationService,
   ) {}
 
   async sendConversationMessage(input: {
@@ -241,11 +243,13 @@ export class ConversationService {
       throw new ForbiddenException('Apenas o responsavel ou supervisores podem encerrar a conversa.')
     }
 
-    return this.updateConversationState({
+    const result = await this.updateConversationState({
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
       state: 'closed',
     })
+    void this.evaluationService.evaluateConversation(input.conversationId, input.workspaceId)
+    return result
   }
 
   async takeoverConversation(input: {

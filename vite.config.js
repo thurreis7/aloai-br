@@ -10,4 +10,10 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/__tests__/setup.js'],
+    include: ['src/__tests__/**/*.spec.jsx', 'src/__tests__/**/*.test.jsx'],
+  },
 })

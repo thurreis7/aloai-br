@@ -61,6 +61,7 @@ Current focus:
 - Last confirmed checkpoint: webhook integrity patch.
 - Last confirmed build: passing (api + frontend + security scans) on 2026-06-07.
 - Phase 04 execution artifacts: `.planning/phases/04-m04-channels-m05-ai-layer/04-01-SUMMARY.md`, `.planning/phases/04-m04-channels-m05-ai-layer/04-02-SUMMARY.md`.
+- TDD verify layer added. All future phases must pass `npm run verify:phase` before closing.
 
 ## Phase Status
 

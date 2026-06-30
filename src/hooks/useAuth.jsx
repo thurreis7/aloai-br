@@ -1,6 +1,7 @@
-import { useState, useEffect, createContext, useContext } from 'react'
+import { useState, useEffect, createContext, useContext, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { persistActiveWorkspace, resolveAuthAccess } from '../lib/access'
+import { isDevBypassEnabled, useDevBypass } from './useDevBypass'
 
 const AuthContext = createContext(null)
 
@@ -48,7 +49,65 @@ export function AuthProvider({ children }) {
     setCompany(workspaces.find((item) => item.id === workspaceId) || null)
   }
 
+  const setDevSession = useCallback((devUser) => {
+    const devWorkspace = {
+      ...devUser.workspace,
+      company_name: devUser.workspace.name,
+    }
+    const devAuthUser = {
+      id: devUser.id,
+      email: devUser.email,
+      role: devUser.role,
+      workspace_id: devUser.workspace_id,
+      company_id: devUser.workspace_id,
+      user_metadata: {
+        name: devUser.name,
+      },
+    }
+    const devProfile = {
+      id: devUser.id,
+      email: devUser.email,
+      full_name: devUser.name,
+      role: devUser.role,
+      is_owner: false,
+      avatar_url: null,
+      workspace_id: devUser.workspace_id,
+      company_id: devUser.workspace_id,
+      departments: [],
+      is_online: true,
+      source: 'dev-bypass',
+    }
+    const devMembership = {
+      id: `dev-bypass-${devUser.id}-${devUser.workspace_id}`,
+      workspace_id: devUser.workspace_id,
+      company_id: devUser.workspace_id,
+      user_id: devUser.id,
+      role: devUser.role,
+      display_name: devUser.name,
+      is_online: true,
+      created_at: null,
+      workspace: devWorkspace,
+      source: 'dev-bypass',
+    }
+
+    persistActiveWorkspace(devUser.workspace_id)
+    setUser(devAuthUser)
+    setProfile(devProfile)
+    setCompany(devWorkspace)
+    setWorkspaces([devWorkspace])
+    setMemberships([devMembership])
+    setIsOwner(false)
+    setRole(devUser.role)
+    setActiveWorkspaceId(devUser.workspace_id)
+    setLoading(false)
+    setWorkspaceReady(true)
+  }, [])
+
+  useDevBypass(setDevSession)
+
   useEffect(() => {
+    if (isDevBypassEnabled()) return
+
     supabase.auth.getSession().then(({ data }) => {
       const u = data?.session?.user || null
       setUser(u)

@@ -13,6 +13,7 @@ import {
 } from 'recharts'
 import { Activity, Bot, MessageSquare, RadioTower, Users2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { apiJson } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
 import { usePermissions } from '../hooks/usePermissions'
 import { getChannelColor, getChannelLabel, normalizeChannelType } from '../lib/channels'
@@ -59,6 +60,23 @@ function isBacklogConversation(conversation) {
   return state !== 'closed' && state !== 'resolved'
 }
 
+function qualityColor(score) {
+  const value = Number(score) || 0
+  if (value <= 4) return 'var(--danger)'
+  if (value <= 6) return 'var(--warning)'
+  if (value <= 8) return 'var(--success)'
+  return '#22D3EE'
+}
+
+function qualityLabel(score) {
+  const value = Number(score) || 0
+  if (!value) return 'sem avaliacoes'
+  if (value <= 4) return 'Ruim'
+  if (value <= 6) return 'Regular'
+  if (value <= 8) return 'Bom'
+  return 'Excelente'
+}
+
 export default function Dashboard() {
   const { ws, workspaceReady, loading: authLoading } = useAuth()
   const { can } = usePermissions()
@@ -85,8 +103,11 @@ export default function Dashboard() {
         const since = new Date()
         since.setDate(since.getDate() - 6)
         since.setHours(0, 0, 0, 0)
+        const qualitySince = new Date()
+        qualitySince.setDate(qualitySince.getDate() - 30)
+        qualitySince.setHours(0, 0, 0, 0)
 
-        const [conversationsRes, messagesRes, channelsRes, membersRes, leadsRes] = await Promise.all([
+        const [conversationsRes, messagesRes, channelsRes, membersRes, leadsRes, qualityRes, cadenceRes] = await Promise.all([
           supabase
             .from('conversations')
             .select('id, status, state, priority, routing_queue, routing_intent, created_at, last_message_at, channel_id, assigned_to, ai_state, escalated_at, escalation_reason')
@@ -109,12 +130,19 @@ export default function Dashboard() {
             .from('leads')
             .select('id, status, owner_id, source_channel_id, conversation_id')
             .eq('workspace_id', ws.id),
+          supabase
+            .from('conversations')
+            .select('id, status, state, evaluation, evaluated_at')
+            .eq('workspace_id', ws.id)
+            .gte('evaluated_at', qualitySince.toISOString()),
+          apiJson(`/workspaces/${ws.id}/dashboard/agent-performance`).catch(() => ({ agents: [] })),
         ])
 
         if (conversationsRes.error) throw conversationsRes.error
         if (messagesRes.error) throw messagesRes.error
         if (channelsRes.error) throw channelsRes.error
         if (leadsRes.error) throw leadsRes.error
+        if (qualityRes.error) throw qualityRes.error
         let members = []
         if (!membersRes.error && (membersRes.data || []).length) {
           members = membersRes.data || []
@@ -174,6 +202,17 @@ export default function Dashboard() {
         const messages = messagesRes.data || []
         const channels = channelsRes.data || []
         const leads = leadsRes.data || []
+        const qualityConversations = (qualityRes.data || []).filter((conversation) => {
+          const state = String(conversation.state || conversation.status || '').toLowerCase()
+          return state === 'closed' || state === 'resolved'
+        })
+        const qualityScores = qualityConversations
+          .map((conversation) => Number(conversation.evaluation?.quality_score))
+          .filter((score) => Number.isFinite(score) && score > 0)
+        const averageQuality = qualityScores.length
+          ? qualityScores.reduce((sum, score) => sum + score, 0) / qualityScores.length
+          : 0
+        const cadenceByAgent = new Map((cadenceRes?.agents || []).map((agent) => [agent.agent_id, agent.avg_response_minutes]))
 
         const todayStart = startOfDay(new Date())
         const todayConversations = conversations.filter((item) => startOfDay(item.created_at) === todayStart)
@@ -221,6 +260,7 @@ export default function Dashboard() {
             name: member.display_name || 'Agente',
             role: member.role,
             online: member.is_online,
+            avgResponseMinutes: cadenceByAgent.get(member.user_id) ?? null,
             total: assigned.length,
             resolved: assigned.filter((item) => item.status === 'resolved').length,
             lastSeen: assigned.reduce((latest, item) => {
@@ -285,6 +325,12 @@ export default function Dashboard() {
             value: `${qualifiedLeads}/${Math.max(leads.length, 1)}`,
             hint: `${disqualifiedLeads} desqualificados`,
             accent: 'var(--warn)',
+          },
+          {
+            label: 'Qualidade Media',
+            value: averageQuality ? averageQuality.toFixed(1) : '-',
+            hint: qualityLabel(averageQuality),
+            accent: qualityColor(averageQuality),
           },
         ]
 
@@ -518,7 +564,7 @@ export default function Dashboard() {
                     key={agent.id}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: 'minmax(0, 1fr) 90px 90px',
+                      gridTemplateColumns: 'minmax(0, 1fr) 90px 110px 90px',
                       gap: 12,
                       alignItems: 'center',
                       padding: 14,
@@ -551,6 +597,12 @@ export default function Dashboard() {
                     <div>
                       <div style={{ fontSize: 22, fontWeight: 800 }}>{agent.resolved}</div>
                       <div style={{ color: 'var(--txt3)', fontSize: 12 }}>resolvidas</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 22, fontWeight: 800 }}>
+                        {Number.isFinite(Number(agent.avgResponseMinutes)) ? `${Math.round(Number(agent.avgResponseMinutes))}min` : '-'}
+                      </div>
+                      <div style={{ color: 'var(--txt3)', fontSize: 12 }}>tempo medio</div>
                     </div>
                     <div style={{ justifySelf: 'end' }}>
                       <StatusPill tone={agent.online ? 'success' : 'default'}>{agent.online ? 'Online' : 'Offline'}</StatusPill>

@@ -138,7 +138,7 @@ function ChannelGlyph({ type, size = 14 }) {
 }
 
 export default function Inbox() {
-  const { user, ws, workspaceReady, loading: authLoading } = useAuth()
+  const { user, ws, wsRole, isOwner, workspaceReady, loading: authLoading } = useAuth()
   const { can, convScope, canViewRoutingReason, canViewHandoffHistory, canManageHandoff } = usePermissions()
   const { conversationId: routeConversationId } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -171,6 +171,7 @@ export default function Inbox() {
   const [escalationReason, setEscalationReason] = useState('sensitive')
   const [escalationNote, setEscalationNote] = useState('')
   const [showPanel, setShowPanel] = useState(true)
+  const [evaluationOpen, setEvaluationOpen] = useState(false)
 
   const msgsEndRef = useRef(null)
   const inputRef = useRef(null)
@@ -202,6 +203,10 @@ export default function Inbox() {
   const activeAssignee = presenceMembers.find((member) => member.user_id === activeConv?.assigned_to || member.id === activeConv?.assigned_to) || null
   const onlineAgents = presenceMembers.filter((member) => member.is_online).length
   const nextActionVisible = nextAction && nextAction.conversationId === activeId && !nextActionDismissed[activeId]
+  const activeEvaluation = activeConv?.evaluation || null
+  const canViewEvaluation = activeConv?.state === 'closed'
+    && activeEvaluation
+    && (isOwner || ['supervisor', 'admin'].includes(String(wsRole?.role || '').toLowerCase()))
 
   const loadConvs = useCallback(async () => {
     if (authLoading || !workspaceReady || !user) {
@@ -225,6 +230,7 @@ export default function Inbox() {
           last_message, last_message_at, created_at, assigned_to,
           routing_queue, routing_intent, routing_confidence, routing_reason, routing_source,
           triage_tag, sentiment, sentiment_confidence,
+          evaluation, evaluated_at,
           ai_state, escalated_at, escalated_by, escalation_reason, escalation_note,
           contacts ( id, name, phone, company, email, is_vip ),
           channels  ( id, type, name )
@@ -417,6 +423,7 @@ export default function Inbox() {
     setEscalationReason('sensitive')
     setEscalationNote('')
     setInternalNote(false)
+    setEvaluationOpen(false)
     loadHandoffHistory(activeId)
     loadNextAction(activeId)
     setTimeout(() => inputRef.current?.focus(), 100)
@@ -706,6 +713,8 @@ export default function Inbox() {
       escalated_by: c.escalated_by || null,
       escalation_reason: String(c.escalation_reason || 'none').toLowerCase(),
       escalation_note: c.escalation_note || '',
+      evaluation: c.evaluation || null,
+      evaluated_at: c.evaluated_at || null,
       contact_id: c.contacts?.id,
       contact_name: c.contacts?.name || c.contacts?.phone || 'Desconhecido',
       contact_phone: c.contacts?.phone,
@@ -739,6 +748,8 @@ export default function Inbox() {
     escalated_by: c.escalated_by || null,
     escalation_reason: String(c.escalation_reason || 'none').toLowerCase(),
     escalation_note: c.escalation_note || '',
+    evaluation: c.evaluation || null,
+    evaluated_at: c.evaluated_at || null,
   })
 
   const mapMsg = (m) => ({
@@ -970,6 +981,14 @@ export default function Inbox() {
             )}
             <div ref={msgsEndRef} />
           </div>
+
+          {canViewEvaluation ? (
+            <EvaluationCard
+              evaluation={activeEvaluation}
+              open={evaluationOpen}
+              onToggle={() => setEvaluationOpen((current) => !current)}
+            />
+          ) : null}
 
           {can('perm_ai') && activeConv && (
             <div style={s.aiBar}>
@@ -1341,6 +1360,64 @@ function AudioMessage({ message }) {
   )
 }
 
+function evaluationColor(score) {
+  const value = Number(score) || 0
+  if (value <= 4) return 'var(--danger)'
+  if (value <= 6) return 'var(--warning)'
+  if (value <= 8) return 'var(--success)'
+  return '#22D3EE'
+}
+
+function EvaluationCard({ evaluation, open, onToggle }) {
+  const score = Number(evaluation?.quality_score || 0)
+  const color = evaluationColor(score)
+  const list = (items) => (Array.isArray(items) && items.length ? items : ['-'])
+
+  return (
+    <div style={s.evaluationCard}>
+      <button type="button" style={s.evaluationHeader} onClick={onToggle}>
+        <div>
+          <div style={s.evaluationTitle}>Avaliacao do Atendimento</div>
+          <div style={s.evaluationSubtitle}>{evaluation?.quality_label || '-'}</div>
+        </div>
+        <div style={{ ...s.evaluationScore, borderColor: color, color }}>{score || '-'}</div>
+      </button>
+      {open ? (
+        <div style={s.evaluationBody}>
+          <div style={s.evaluationGrid}>
+            <InfoMini label="Script" value={evaluation?.script_compliance ? 'Aderente' : 'Ajustar'} />
+            <InfoMini label="Cadencia" value={evaluation?.response_cadence || '-'} />
+          </div>
+          <div style={s.evaluationNote}>{evaluation?.script_compliance_note || '-'}</div>
+          <InfoList title="Pontos fortes" items={list(evaluation?.strengths)} />
+          <InfoList title="Lacunas" items={list(evaluation?.gaps)} />
+          <div style={s.evaluationRecommendation}>{evaluation?.recommendation || '-'}</div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function InfoMini({ label, value }) {
+  return (
+    <div style={s.evaluationMini}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function InfoList({ title, items }) {
+  return (
+    <div>
+      <div style={s.evaluationListTitle}>{title}</div>
+      <ul style={s.evaluationList}>
+        {items.map((item, index) => <li key={`${title}-${index}`}>{item}</li>)}
+      </ul>
+    </div>
+  )
+}
+
 const s = {
   root: {
     display: 'flex', height: '100%', overflow: 'hidden',
@@ -1490,6 +1567,69 @@ const s = {
     marginLeft: 6,
     color: 'var(--txt3)',
     verticalAlign: 'middle',
+  },
+  evaluationCard: {
+    margin: '0 12px 8px',
+    borderRadius: 8,
+    border: '1px solid rgba(255,255,255,.08)',
+    background: 'color-mix(in srgb, var(--bg-card) 86%, transparent)',
+    backdropFilter: 'blur(14px)',
+    WebkitBackdropFilter: 'blur(14px)',
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  evaluationHeader: {
+    width: '100%',
+    border: 'none',
+    background: 'transparent',
+    color: 'var(--txt1)',
+    padding: '10px 12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    textAlign: 'left',
+  },
+  evaluationTitle: { fontSize: 12, fontWeight: 800 },
+  evaluationSubtitle: { fontSize: 10.5, color: 'var(--txt3)', marginTop: 2 },
+  evaluationScore: {
+    width: 34,
+    height: 34,
+    borderRadius: '50%',
+    border: '2px solid',
+    display: 'grid',
+    placeItems: 'center',
+    fontSize: 13,
+    fontWeight: 900,
+    flexShrink: 0,
+  },
+  evaluationBody: { padding: '0 12px 12px', display: 'grid', gap: 9, fontSize: 11.5, color: 'var(--txt2)' },
+  evaluationGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 },
+  evaluationMini: {
+    border: '1px solid rgba(255,255,255,.06)',
+    background: 'rgba(255,255,255,.03)',
+    borderRadius: 8,
+    padding: '7px 8px',
+    display: 'grid',
+    gap: 3,
+  },
+  evaluationNote: {
+    borderLeft: '3px solid rgba(34,211,238,.6)',
+    padding: '6px 8px',
+    background: 'rgba(34,211,238,.05)',
+    borderRadius: 6,
+    lineHeight: 1.45,
+  },
+  evaluationListTitle: { fontSize: 10, fontWeight: 800, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '.08em' },
+  evaluationList: { margin: '5px 0 0 16px', padding: 0, display: 'grid', gap: 3, lineHeight: 1.4 },
+  evaluationRecommendation: {
+    border: '1px solid rgba(255,255,255,.06)',
+    background: 'rgba(255,255,255,.03)',
+    borderRadius: 8,
+    padding: '8px 9px',
+    lineHeight: 1.45,
   },
   aiBar: {
     margin: '0 12px 8px', padding: '8px 11px', borderRadius: 9,

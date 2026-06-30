@@ -9,6 +9,7 @@ import { ConversationController } from './controllers/conversation.controller'
 import { AiAssistController } from './controllers/ai-assist.controller'
 import { RoutingController } from './controllers/routing.controller'
 import { LeadController } from './controllers/lead.controller'
+import { DashboardController } from './controllers/dashboard.controller'
 import { SupabaseService } from './services/supabase.service'
 import { AccessService } from './services/access.service'
 import { ProvisioningService } from './services/provisioning.service'
@@ -20,6 +21,8 @@ import { AiAssistService } from './services/ai-assist.service'
 import { AiContextService } from './services/ai-context.service'
 import { RoutingService } from './services/routing.service'
 import { LeadService } from './services/lead.service'
+import { EvaluationService } from './services/evaluation.service'
+import { DashboardService } from './services/dashboard.service'
 
 @Module({
   imports: [],
@@ -34,6 +37,7 @@ import { LeadService } from './services/lead.service'
     AiAssistController,
     RoutingController,
     LeadController,
+    DashboardController,
   ],
   providers: [
     SupabaseService,
@@ -47,6 +51,8 @@ import { LeadService } from './services/lead.service'
     AiContextService,
     RoutingService,
     LeadService,
+    EvaluationService,
+    DashboardService,
   ],
 })
 export class AppModule {}
